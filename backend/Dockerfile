@@ -13,4 +13,4 @@ COPY frontend ./frontend
 
 EXPOSE 8000
 
-CMD ["python", "backend/app.py"]
+CMD ["python", "-m", "backend.app"]

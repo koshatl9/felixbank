@@ -1,0 +1,85 @@
+from __future__ import annotations
+
+import os
+import re
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
+from pymysql.cursors import DictCursor
+
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent
+PROJECT_DIR = BACKEND_DIR.parent
+FRONTEND_DIR = PROJECT_DIR / "frontend"
+LEGACY_USERS_PATH = BACKEND_DIR / "data" / "users.json"
+
+load_dotenv(PROJECT_DIR / ".env")
+
+LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+TWOPLACES = Decimal("0.01")
+INITIAL_BALANCES = {
+    "UAH": Decimal("15000.00"),
+    "USD": Decimal("120.00"),
+}
+SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        login VARCHAR(32) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS balances (
+        user_id INT NOT NULL,
+        currency_code CHAR(3) NOT NULL,
+        amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+        PRIMARY KEY (user_id, currency_code),
+        CONSTRAINT fk_balances_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE
+    )
+    """,
+)
+
+
+def env(name: str, default: str = "") -> str:
+    return os.getenv(name, default)
+
+
+def running_in_docker() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def default_mysql_host() -> str:
+    return "db" if running_in_docker() else "127.0.0.1"
+
+
+def default_mysql_port() -> int:
+    return 3306 if running_in_docker() else 3307
+
+
+def mysql_host() -> str:
+    variable_name = "MYSQL_HOST_DOCKER" if running_in_docker() else "MYSQL_HOST_LOCAL"
+    return env("MYSQL_HOST", env(variable_name, default_mysql_host()))
+
+
+def mysql_port() -> int:
+    variable_name = "MYSQL_PORT_DOCKER" if running_in_docker() else "MYSQL_PORT_LOCAL"
+    return int(env("MYSQL_PORT", env(variable_name, str(default_mysql_port()))))
+
+
+def db_config() -> dict[str, Any]:
+    return {
+        "host": mysql_host(),
+        "port": mysql_port(),
+        "user": env("MYSQL_USER", "felixbank"),
+        "password": env("MYSQL_PASSWORD", "felixbank"),
+        "database": env("MYSQL_DATABASE", "felixbank"),
+        "charset": "utf8mb4",
+        "cursorclass": DictCursor,
+        "autocommit": False,
+    }
