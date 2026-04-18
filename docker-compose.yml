@@ -1,0 +1,43 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: felixbank-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      APP_PORT: 8000
+      SECRET_KEY: felixbank-dev-secret
+      MYSQL_HOST: db
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: felixbank
+      MYSQL_USER: felixbank
+      MYSQL_PASSWORD: felixbank
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  db:
+    image: mysql:8.4
+    container_name: felixbank-mysql
+    environment:
+      MYSQL_DATABASE: felixbank
+      MYSQL_USER: felixbank
+      MYSQL_PASSWORD: felixbank
+      MYSQL_ROOT_PASSWORD: root
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+volumes:
+  mysql_data:

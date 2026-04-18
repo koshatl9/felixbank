@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bank Profile</title>
+    <link rel="stylesheet" href="profile.css">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+
+<body>
+    <div class="page-shell">
+        <aside class="sidebar">
+            <div class="brand">
+                <div class="brand__logo">V</div>
+                <div>
+                    <p class="brand__caption">Banking system</p>
+                    <h1>Felix Bank</h1>
+                </div>
+            </div>
+
+            <nav class="menu">
+                <a class="menu__item menu__item--active" href="#"><i class="bx bx-user-circle"></i> Profile</a>
+                <a class="menu__item" href="#"><i class="bx bx-wallet"></i> Accounts</a>
+                <a class="menu__item" href="#"><i class="bx bx-transfer"></i> Transfers</a>
+                <a class="menu__item" href="#"><i class="bx bx-line-chart"></i> Analytics</a>
+                <a class="menu__item" href="#"><i class="bx bx-cog"></i> Settings</a>
+            </nav>
+
+            <div class="support-card">
+                <p class="support-card__label">Premium support</p>
+                <h2>Need help with your payments?</h2>
+                <p>Our manager is online and ready to help with cards, limits and transfers.</p>
+                <button type="button">Contact manager</button>
+            </div>
+        </aside>
+
+        <main class="dashboard">
+            <header class="hero">
+                <div>
+                    <p class="hero__eyebrow">Client profile</p>
+                    <h2>Welcome back, Daria</h2>
+                    <p class="hero__text">Monitor your banking activity, manage cards and control your daily limits in
+                        one place.</p>
+                </div>
+
+                <div class="hero__actions">
+                    <button class="ghost-btn" type="button"><i class="bx bx-bell"></i></button>
+                    <button class="primary-btn" type="button">Upgrade plan</button>
+                </div>
+            </header>
+
+            <section class="content-grid">
+                <article class="panel profile-card">
+                    <div class="profile-card__top">
+                        <div class="avatar">DS</div>
+                        <div>
+                            <p class="section-label">Primary client profile</p>
+                            <h3>Daria Stepanova</h3>
+                            <p class="muted">Verified client since 2024</p>
+                        </div>
+                    </div>
+
+                    <div class="profile-meta">
+                        <div>
+                            <span>Email</span>
+                            <strong>daria.stepanova@violetbank.com</strong>
+                        </div>
+                        <div>
+                            <span>Phone</span>
+                            <strong>+380 67 555 18 42</strong>
+                        </div>
+                        <div>
+                            <span>Client ID</span>
+                            <strong>VB-2048-5519</strong>
+                        </div>
+                        <div>
+                            <span>Status</span>
+                            <strong class="status-badge">Protected</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel balance-card">
+                    <p class="section-label">Available balance</p>
+                    <h3>$24,890.75</h3>
+                    <p class="muted">Across current, savings and card accounts</p>
+
+                    <div class="balance-stats">
+                        <div>
+                            <span>Monthly income</span>
+                            <strong>+$8,420</strong>
+                        </div>
+                        <div>
+                            <span>Expenses</span>
+                            <strong>-$3,180</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel bank-card">
+                    <div class="card-chip"></div>
+                    <p class="section-label">Primary card</p>
+                    <h3>Violet Platinum</h3>
+                    <p class="card-number">**** 4821</p>
+
+                    <div class="bank-card__footer">
+                        <div>
+                            <span>Card holder</span>
+                            <strong>Daria Stepanova</strong>
+                        </div>
+                        <div>
+                            <span>Valid thru</span>
+                            <strong>08/29</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel actions-card">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="section-label">Quick actions</p>
+                            <h3>Banking tools</h3>
+                        </div>
+                    </div>
+
+                    <div class="actions-grid">
+                        <button type="button"><i class="bx bx-send"></i> Send money</button>
+                        <button type="button"><i class="bx bx-credit-card"></i> Manage cards</button>
+                        <button type="button"><i class="bx bx-shield-quarter"></i> Security</button>
+                        <button type="button"><i class="bx bx-download"></i> Statements</button>
+                    </div>
+                </article>
+
+                <article class="panel transactions-card">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="section-label">Recent transactions</p>
+                            <h3>Last operations</h3>
+                        </div>
+                        <a href="#">View all</a>
+                    </div>
+
+                    <div class="transaction-list">
+                        <div class="transaction-item">
+                            <div class="transaction-item__icon"><i class="bx bx-up-right-arrow-alt"></i></div>
+                            <div>
+                                <strong>International transfer</strong>
+                                <p>Today, 14:25</p>
+                            </div>
+                            <strong class="amount amount--negative">- $1,240.00</strong>
+                        </div>
+
+                        <div class="transaction-item">
+                            <div class="transaction-item__icon"><i class="bx bx-plus"></i></div>
+                            <div>
+                                <strong>Salary payment</strong>
+                                <p>Apr 17, 09:10</p>
+                            </div>
+                            <strong class="amount amount--positive">+ $4,800.00</strong>
+                        </div>
+
+                        <div class="transaction-item">
+                            <div class="transaction-item__icon"><i class="bx bx-shopping-bag"></i></div>
+                            <div>
+                                <strong>Business subscription</strong>
+                                <p>Apr 16, 18:40</p>
+                            </div>
+                            <strong class="amount amount--negative">- $89.99</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="panel limits-card">
+                    <div class="panel-heading">
+                        <div>
+                            <p class="section-label">Control center</p>
+                            <h3>Daily limits</h3>
+                        </div>
+                    </div>
+
+                    <div class="limit-row">
+                        <div class="limit-row__text">
+                            <strong>Online payments</strong>
+                            <span>$8,000 from $10,000 used</span>
+                        </div>
+                        <div class="progress"><span style="width: 80%;"></span></div>
+                    </div>
+
+                    <div class="limit-row">
+                        <div class="limit-row__text">
+                            <strong>ATM withdrawal</strong>
+                            <span>$1,200 from $3,000 used</span>
+                        </div>
+                        <div class="progress"><span style="width: 40%;"></span></div>
+                    </div>
+
+                    <div class="limit-row">
+                        <div class="limit-row__text">
+                            <strong>Transfers</strong>
+                            <span>$6,500 from $7,500 used</span>
+                        </div>
+                        <div class="progress"><span style="width: 86%;"></span></div>
+                    </div>
+                </article>
+            </section>
+        </main>
+    </div>
+</body>
+
+</html>

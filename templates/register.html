@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Регистрация</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial;
+      background: linear-gradient(135deg, #5b2cff, #d946ef);
+      color: #fff;
+    }
+    .wrap { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .card {
+      width: min(480px, 100%);
+      background: rgba(255, 255, 255, 0.12);
+      border: 2px solid rgba(255, 255, 255, 0.24);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 18px 45px rgba(30, 10, 70, 0.25);
+      backdrop-filter: blur(10px);
+    }
+    .mascot {
+      display: grid;
+      place-items: center;
+      margin-bottom: 14px;
+    }
+    .mascot img {
+      width: 120px;
+      height: auto;
+      filter: drop-shadow(0 18px 40px rgba(0,0,0,0.45));
+    }
+    .mascot-title {
+      margin-bottom: 8px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 { font-size: 18px; margin: 0 0 14px; }
+    .hint { margin: 0 0 16px; color: rgba(255,255,255,0.86); font-size: 13px; line-height: 1.4; }
+    label { display: block; font-size: 13px; margin: 12px 0 6px; color: rgba(255,255,255,0.92); }
+    .row { display: grid; grid-template-columns: 1fr auto; gap: 10px; align-items: center; }
+    input[type="password"], input[type="text"] {
+      width: 100%;
+      height: 52px;
+      padding: 0 16px;
+      border-radius: 999px;
+      border: 2px solid rgba(255, 255, 255, 0.30);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      outline: none;
+    }
+    input:focus { border-color: rgba(255,255,255,0.7); box-shadow: 0 0 0 4px rgba(255,255,255,0.16); }
+    .btn {
+      cursor: pointer;
+      border: 2px solid rgba(255, 255, 255, 0.24);
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .btn.primary {
+      width: 100%;
+      margin-top: 16px;
+      height: 52px;
+      background: #fff;
+      border: none;
+      color: #5b2cff;
+      font-weight: 700;
+      padding: 0 14px;
+    }
+    .msg {
+      margin: 0 0 14px;
+      padding: 10px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      background: rgba(0,0,0,0.18);
+    }
+    .meta { margin-top: 14px; font-size: 13px; color: rgba(255,255,255,0.86); }
+    .meta a { color: #fff; text-decoration: none; }
+    .meta a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="mascot">
+        <div class="mascot-title">felixBANK</div>
+        <img src="{{ url_for('serve_assets', filename='mascot.png') }}" alt="Mascot" loading="lazy">
+      </div>
+      <h1>Регистрация</h1>
+      <p class="hint">Логин: 3-32 символа (латиница/цифры/._-). Пароль: минимум 8 символов.</p>
+
+      {% if error %}
+        <div class="msg" role="alert">{{ error }}</div>
+      {% endif %}
+
+      <form action="" method="post" autocomplete="on" novalidate>
+        <label for="login">Логин</label>
+        <div class="row" style="grid-template-columns: 1fr;">
+          <input id="login" name="login" type="text" required autocomplete="username">
+        </div>
+
+        <label for="password">Пароль</label>
+        <div class="row">
+          <input id="password" name="password" type="password" minlength="8" required autocomplete="new-password">
+          <button class="btn" type="button" id="toggle1" aria-controls="password" aria-pressed="false">Показать</button>
+        </div>
+
+        <label for="confirm_password">Повторите пароль</label>
+        <div class="row">
+          <input id="confirm_password" name="confirm_password" type="password" minlength="8" required autocomplete="new-password">
+          <button class="btn" type="button" id="toggle2" aria-controls="confirm_password" aria-pressed="false">Показать</button>
+        </div>
+
+        <button class="btn primary" type="submit">Зарегистрироваться</button>
+      </form>
+
+      <div class="meta">
+        Уже есть аккаунт? <a href="{{ url_for('login') }}">Войти</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function toggle(btnId, inputId) {
+      const btn = document.getElementById(btnId);
+      const input = document.getElementById(inputId);
+      btn.addEventListener('click', () => {
+        const isText = input.type === 'text';
+        input.type = isText ? 'password' : 'text';
+        btn.textContent = isText ? 'Показать' : 'Скрыть';
+        btn.setAttribute('aria-pressed', String(!isText));
+      });
+    }
+    toggle('toggle1', 'password');
+    toggle('toggle2', 'confirm_password');
+  </script>
+</body>
+</html>

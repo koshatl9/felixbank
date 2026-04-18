@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Курсы валют</title>
+  <link rel="stylesheet" href="{{ url_for('serve_profile_css') }}">
+</head>
+<body>
+  <div class="page-shell">
+    <aside class="sidebar">
+      <div style="display:grid; place-items:center;">
+        <div class="mascot-title">felixBANK</div>
+        <img
+          src="{{ url_for('serve_assets', filename='mascot.png') }}"
+          alt="Mascot"
+          loading="lazy"
+          style="width: 140px; height: auto; margin-bottom: 14px; filter: drop-shadow(0 18px 40px rgba(0,0,0,0.45));"
+        >
+      </div>
+
+      <div class="brand">
+        <div class="brand__logo">{{ login[:1]|upper }}</div>
+        <div>
+          <h1>Профиль</h1>
+          <div class="brand__caption">Пользователь: {{ login }}</div>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <a class="menu__item" href="{{ url_for('profile') }}">
+          <i>🏠</i>
+          <div>
+            <div>Главная</div>
+            <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+          </div>
+        </a>
+        <a class="menu__item menu__item--active" href="{{ url_for('rates') }}">
+          <i>💱</i>
+          <div>
+            <div>Курсы валют</div>
+            <div class="muted" style="font-size: 12px;">На текущее время</div>
+          </div>
+        </a>
+        <a class="menu__item" href="{{ url_for('profile', logout=1) }}">
+          <i>⎋</i>
+          <div>
+            <div>Выйти</div>
+            <div class="muted" style="font-size: 12px;">Завершить сессию</div>
+          </div>
+        </a>
+      </nav>
+
+      <div class="support-card">
+        <div class="support-card__label">Источник</div>
+        <h2>ЦБ РФ</h2>
+        <p>Курсы пересчитаны в UAH. Ответ кешируется на 2 минуты в сессии.</p>
+        <button type="button" onclick="location.reload()">Обновить</button>
+      </div>
+    </aside>
+
+    <main class="dashboard">
+      <section class="hero">
+        <div>
+          <div class="hero__eyebrow">Курсы валют</div>
+          <h2>На текущее время</h2>
+          <p class="hero__text">
+            {% if payload.ok and payload.date %}
+              Дата обновления: <strong>{{ payload.date }}</strong>
+            {% else %}
+              Показаны резервные демо-курсы, источник временно недоступен.
+            {% endif %}
+          </p>
+        </div>
+      </section>
+
+      <section class="content-grid">
+        <article class="panel limits-card">
+          <div class="panel-heading">
+            <div>
+              <div class="section-label">Список</div>
+              <h3>Все валюты к UAH</h3>
+            </div>
+            {% if not payload.ok and payload.error %}
+              <span class="status-badge" style="background: rgba(255, 159, 199, 0.14); color: var(--danger);">
+                {{ payload.error }}
+              </span>
+            {% endif %}
+          </div>
+
+          <div class="transaction-list">
+            {% set rates = payload.rates if payload.ok and payload.rates else fallback %}
+            {% for r in rates %}
+              <div class="transaction-item">
+                <div class="transaction-item__icon">₴</div>
+                <div style="min-width:0;">
+                  <strong>{{ r.code }}</strong>
+                  <p>{{ r.name }}</p>
+                </div>
+                <div class="amount amount--positive">{{ '%.4f'|format(r.uah_per_1) }} UAH</div>
+              </div>
+            {% endfor %}
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+</body>
+</html>
