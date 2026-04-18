@@ -1,16 +1,20 @@
 from __future__ import annotations
 
+import json
+import logging
 import os
 import re
 import time
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from functools import wraps
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 import pymysql
 from flask import Flask, flash, redirect, render_template, request, session, url_for
+from dotenv import load_dotenv
 from pymysql.cursors import DictCursor
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -21,19 +25,73 @@ INITIAL_BALANCES = {
     "UAH": Decimal("15000.00"),
     "USD": Decimal("120.00"),
 }
+BACKEND_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = BACKEND_DIR.parent
+FRONTEND_DIR = PROJECT_DIR / "frontend"
+LEGACY_USERS_PATH = BACKEND_DIR / "data" / "users.json"
+SCHEMA_STATEMENTS = (
+    """
+    CREATE TABLE IF NOT EXISTS users (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        login VARCHAR(32) NOT NULL UNIQUE,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS balances (
+        user_id INT NOT NULL,
+        currency_code CHAR(3) NOT NULL,
+        amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+        PRIMARY KEY (user_id, currency_code),
+        CONSTRAINT fk_balances_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE
+    )
+    """,
+)
 
-app = Flask(__name__, static_folder=".", template_folder="templates")
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "felixbank-dev-secret")
+load_dotenv(PROJECT_DIR / ".env")
+
+app = Flask(
+    __name__,
+    static_folder=str(FRONTEND_DIR),
+    template_folder=str(FRONTEND_DIR / "templates"),
+)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "change-me")
+app.logger.setLevel(logging.INFO)
 
 
 def env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
+def running_in_docker() -> bool:
+    return Path("/.dockerenv").exists()
+
+
+def default_mysql_host() -> str:
+    return "db" if running_in_docker() else "127.0.0.1"
+
+
+def default_mysql_port() -> int:
+    return 3306 if running_in_docker() else 3307
+
+
+def mysql_host() -> str:
+    variable_name = "MYSQL_HOST_DOCKER" if running_in_docker() else "MYSQL_HOST_LOCAL"
+    return env("MYSQL_HOST", env(variable_name, default_mysql_host()))
+
+
+def mysql_port() -> int:
+    variable_name = "MYSQL_PORT_DOCKER" if running_in_docker() else "MYSQL_PORT_LOCAL"
+    return int(env("MYSQL_PORT", env(variable_name, str(default_mysql_port()))))
+
+
 def db_config() -> dict[str, Any]:
     return {
-        "host": env("MYSQL_HOST", "db"),
-        "port": int(env("MYSQL_PORT", "3306")),
+        "host": mysql_host(),
+        "port": mysql_port(),
         "user": env("MYSQL_USER", "felixbank"),
         "password": env("MYSQL_PASSWORD", "felixbank"),
         "database": env("MYSQL_DATABASE", "felixbank"),
@@ -45,6 +103,76 @@ def db_config() -> dict[str, Any]:
 
 def get_db():
     return pymysql.connect(**db_config())
+
+
+def ensure_schema() -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            for statement in SCHEMA_STATEMENTS:
+                cursor.execute(statement)
+        connection.commit()
+
+
+def seed_balances(cursor, user_id: int) -> None:
+    cursor.executemany(
+        """
+        INSERT INTO balances (user_id, currency_code, amount)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE amount = VALUES(amount)
+        """,
+        [
+            (user_id, code, decimal_to_str(amount))
+            for code, amount in INITIAL_BALANCES.items()
+        ],
+    )
+
+
+def import_legacy_users() -> None:
+    if not LEGACY_USERS_PATH.exists():
+        return
+
+    try:
+        raw_users = json.loads(LEGACY_USERS_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        app.logger.exception("Failed to read legacy users from %s", LEGACY_USERS_PATH)
+        return
+
+    if not isinstance(raw_users, list):
+        return
+
+    imported = 0
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            for item in raw_users:
+                if not isinstance(item, dict):
+                    continue
+                login_value = str(item.get("login") or "").strip()
+                password_hash = str(item.get("password_hash") or "").strip()
+                if not login_value or not password_hash or not LOGIN_RE.fullmatch(login_value):
+                    continue
+                cursor.execute(
+                    """
+                    INSERT INTO users (login, password_hash)
+                    VALUES (%s, %s)
+                    ON DUPLICATE KEY UPDATE password_hash = users.password_hash
+                    """,
+                    (login_value, password_hash),
+                )
+                cursor.execute("SELECT id FROM users WHERE login = %s LIMIT 1", (login_value,))
+                user = cursor.fetchone()
+                if user is None:
+                    continue
+                seed_balances(cursor, int(user["id"]))
+                imported += 1
+        connection.commit()
+
+    if imported:
+        app.logger.info("Imported %s legacy users into MySQL", imported)
+
+
+def init_storage() -> None:
+    ensure_schema()
+    import_legacy_users()
 
 
 def decimal_to_str(value: Decimal | float | int) -> str:
@@ -115,18 +243,24 @@ def create_user(login: str, password: str) -> int:
                 (login, generate_password_hash(password)),
             )
             user_id = int(cursor.lastrowid)
-            cursor.executemany(
-                """
-                INSERT INTO balances (user_id, currency_code, amount)
-                VALUES (%s, %s, %s)
-                """,
-                [
-                    (user_id, code, decimal_to_str(amount))
-                    for code, amount in INITIAL_BALANCES.items()
-                ],
-            )
+            seed_balances(cursor, user_id)
         connection.commit()
     return user_id
+
+
+def verify_password(password_hash: str, password: str) -> bool:
+    normalized_hash = password_hash.strip()
+    if normalized_hash.startswith(("$2a$", "$2b$", "$2y$")):
+        try:
+            import bcrypt
+        except ImportError:
+            app.logger.exception("bcrypt is required to verify legacy password hashes")
+            return False
+
+        bcrypt_hash = normalized_hash.replace("$2y$", "$2b$", 1).encode("utf-8")
+        return bcrypt.checkpw(password.encode("utf-8"), bcrypt_hash)
+
+    return check_password_hash(normalized_hash, password)
 
 
 def get_balances(user_id: int) -> dict[str, Decimal]:
@@ -263,16 +397,23 @@ def login():
         elif not password:
             error = "Введите пароль."
         else:
-            user = get_user_by_login(login_value)
-            if user is None:
-                error = "Пользователь не найден. Зарегистрируйтесь."
-            elif not check_password_hash(str(user["password_hash"]), password):
-                error = "Неверный пароль."
-            else:
-                session.clear()
-                session["user_id"] = int(user["id"])
-                session["login"] = str(user["login"])
-                return redirect(url_for("profile"))
+            try:
+                user = get_user_by_login(login_value)
+                if user is None:
+                    error = "Пользователь не найден. Зарегистрируйтесь."
+                elif not verify_password(str(user["password_hash"]), password):
+                    error = "Неверный пароль."
+                else:
+                    session.clear()
+                    session["user_id"] = int(user["id"])
+                    session["login"] = str(user["login"])
+                    return redirect(url_for("profile"))
+            except pymysql.MySQLError:
+                app.logger.exception("Database error during login for %s", login_value)
+                error = "Не удалось подключиться к базе данных. Проверьте настройки MySQL."
+            except ValueError:
+                app.logger.exception("Unsupported password hash for %s", login_value)
+                error = "Формат пароля этого пользователя не поддерживается."
 
     return render_template("login.html", error=error)
 
@@ -423,4 +564,6 @@ def serve_assets(filename: str):
 
 
 if __name__ == "__main__":
+    with app.app_context():
+        init_storage()
     app.run(host="0.0.0.0", port=int(env("APP_PORT", "8000")), debug=False)
