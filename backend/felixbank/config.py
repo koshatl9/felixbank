@@ -43,6 +43,37 @@ SCHEMA_STATEMENTS = (
             ON DELETE CASCADE
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS transfers (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        sender_id INT NOT NULL,
+        recipient_id INT NOT NULL,
+        currency_code CHAR(3) NOT NULL DEFAULT 'UAH',
+        amount DECIMAL(12, 2) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_transfers_sender
+            FOREIGN KEY (sender_id) REFERENCES users(id)
+            ON DELETE CASCADE,
+        CONSTRAINT fk_transfers_recipient
+            FOREIGN KEY (recipient_id) REFERENCES users(id)
+            ON DELETE CASCADE,
+        INDEX idx_transfers_sender_created (sender_id, created_at),
+        INDEX idx_transfers_recipient_created (recipient_id, created_at)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS user_profiles (
+        user_id INT NOT NULL PRIMARY KEY,
+        first_name VARCHAR(64) NOT NULL DEFAULT '',
+        last_name VARCHAR(64) NOT NULL DEFAULT '',
+        age INT NULL,
+        avatar_filename VARCHAR(255) NOT NULL DEFAULT '',
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_user_profiles_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE
+    )
+    """,
 )
 
 

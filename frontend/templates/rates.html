@@ -28,18 +28,30 @@
       </div>
 
       <nav class="menu">
-        <a class="menu__item" href="{{ url_for('profile') }}">
-          <i>🏠</i>
-          <div>
-            <div>Главная</div>
-            <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('profile') }}">
+            <i>🏠</i>
+            <div>
+              <div>Главная</div>
+              <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('profile_details') }}">Профиль</a>
           </div>
-        </a>
+        </div>
         <a class="menu__item menu__item--active" href="{{ url_for('rates') }}">
           <i>💱</i>
           <div>
             <div>Курсы валют</div>
             <div class="muted" style="font-size: 12px;">На текущее время</div>
+          </div>
+        </a>
+        <a class="menu__item" href="{{ url_for('transfer') }}">
+          <i>💳</i>
+          <div>
+            <div>Перевод на карту</div>
+            <div class="muted" style="font-size: 12px;">Между пользователями</div>
           </div>
         </a>
         <a class="menu__item" href="{{ url_for('profile', logout=1) }}">
