@@ -107,6 +107,40 @@ body {
     gap: 10px;
 }
 
+.menu__group {
+    display: grid;
+    gap: 8px;
+}
+
+.menu__submenu {
+    display: none;
+    gap: 6px;
+    margin-left: 56px;
+}
+
+.menu__group:hover .menu__submenu,
+.menu__group:focus-within .menu__submenu,
+.menu__group--open .menu__submenu {
+    display: grid;
+}
+
+.menu__subitem {
+    padding: 10px 12px;
+    border-radius: 14px;
+    color: var(--text-soft);
+    text-decoration: none;
+    border: 1px solid transparent;
+    background: rgba(255, 255, 255, 0.03);
+    font-size: 13px;
+}
+
+.menu__subitem:hover,
+.menu__subitem--active {
+    color: var(--text-main);
+    background: rgba(181, 108, 255, 0.16);
+    border-color: rgba(229, 209, 255, 0.12);
+}
+
 .menu__item {
     display: flex;
     align-items: center;
@@ -225,6 +259,15 @@ body {
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.hero-avatar {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(229, 209, 255, 0.34);
+    box-shadow: 0 12px 30px rgba(116, 45, 212, 0.25);
 }
 
 .ghost-btn {
@@ -389,6 +432,82 @@ body {
     text-decoration: none;
 }
 
+.panel input,
+.panel select {
+    width: 100%;
+    padding: 14px 12px;
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-main);
+    font-family: inherit;
+    font-size: 15px;
+}
+
+.panel input::placeholder {
+    color: var(--text-soft);
+}
+
+.transfer-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 680px;
+}
+
+.transfer-table th,
+.transfer-table td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.transfer-table thead th {
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-soft);
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.transfer-table tbody tr:hover {
+    background: rgba(181, 108, 255, 0.08);
+}
+
+.status-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.status-pill--out {
+    color: var(--danger);
+    background: rgba(255, 159, 199, 0.16);
+}
+
+.status-pill--in {
+    color: var(--success);
+    background: rgba(126, 247, 184, 0.16);
+}
+
+.user-list {
+    display: grid;
+    gap: 8px;
+}
+
+.user-list__item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.04);
+}
+
 .actions-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -448,7 +567,7 @@ body {
     color: var(--danger);
 }
 
-.limit-row + .limit-row {
+.limit-row+.limit-row {
     margin-top: 20px;
 }
 
@@ -489,6 +608,7 @@ body {
 }
 
 @media (max-width: 920px) {
+
     .hero,
     .panel-heading,
     .bank-card__footer,

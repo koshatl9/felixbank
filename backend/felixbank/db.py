@@ -119,3 +119,166 @@ def update_balances(user_id: int, balances: dict[str, Decimal]) -> None:
                 ],
             )
         connection.commit()
+
+
+def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currency_code: str = "UAH") -> None:
+    transfer_amount = amount.quantize(Decimal("0.01"))
+    if transfer_amount <= 0:
+        raise ValueError("amount must be positive")
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT amount
+                FROM balances
+                WHERE user_id = %s AND currency_code = %s
+                FOR UPDATE
+                """,
+                (sender_id, currency_code),
+            )
+            sender_row = cursor.fetchone()
+            sender_balance = Decimal(str(sender_row["amount"])) if sender_row is not None else Decimal("0")
+            if sender_balance < transfer_amount:
+                raise ValueError("insufficient funds")
+
+            cursor.execute(
+                """
+                UPDATE balances
+                SET amount = amount - %s
+                WHERE user_id = %s AND currency_code = %s
+                """,
+                (decimal_to_str(transfer_amount), sender_id, currency_code),
+            )
+            cursor.execute(
+                """
+                INSERT INTO balances (user_id, currency_code, amount)
+                VALUES (%s, %s, %s)
+                ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)
+                """,
+                (recipient_id, currency_code, decimal_to_str(transfer_amount)),
+            )
+            cursor.execute(
+                """
+                INSERT INTO transfers (sender_id, recipient_id, currency_code, amount)
+                VALUES (%s, %s, %s, %s)
+                """,
+                (sender_id, recipient_id, currency_code, decimal_to_str(transfer_amount)),
+            )
+        connection.commit()
+
+
+def get_transfer_history_for_user(user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    t.id,
+                    t.sender_id,
+                    t.recipient_id,
+                    t.currency_code,
+                    t.amount,
+                    t.created_at,
+                    sender.login AS sender_login,
+                    recipient.login AS recipient_login
+                FROM transfers AS t
+                JOIN users AS sender ON sender.id = t.sender_id
+                JOIN users AS recipient ON recipient.id = t.recipient_id
+                WHERE t.sender_id = %s OR t.recipient_id = %s
+                ORDER BY t.created_at DESC, t.id DESC
+                LIMIT %s
+                """,
+                (user_id, user_id, limit),
+            )
+            rows = cursor.fetchall()
+
+    return rows
+
+
+def get_all_user_logins(exclude_user_id: int | None = None) -> list[str]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            if exclude_user_id is None:
+                cursor.execute(
+                    """
+                    SELECT login
+                    FROM users
+                    ORDER BY login ASC
+                    """
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT login
+                    FROM users
+                    WHERE id <> %s
+                    ORDER BY login ASC
+                    """,
+                    (exclude_user_id,),
+                )
+            rows = cursor.fetchall()
+
+    return [str(row["login"]) for row in rows]
+
+
+def get_user_profile(user_id: int) -> dict[str, Any]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT user_id, first_name, last_name, age, avatar_filename
+                FROM user_profiles
+                WHERE user_id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        return {
+            "user_id": user_id,
+            "first_name": "",
+            "last_name": "",
+            "age": None,
+            "avatar_filename": "",
+        }
+    return row
+
+
+def save_user_profile(
+    user_id: int,
+    first_name: str,
+    last_name: str,
+    age: int | None,
+    avatar_filename: str | None = None,
+) -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            if avatar_filename is None:
+                cursor.execute(
+                    """
+                    INSERT INTO user_profiles (user_id, first_name, last_name, age)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        first_name = VALUES(first_name),
+                        last_name = VALUES(last_name),
+                        age = VALUES(age)
+                    """,
+                    (user_id, first_name, last_name, age),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO user_profiles (user_id, first_name, last_name, age, avatar_filename)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        first_name = VALUES(first_name),
+                        last_name = VALUES(last_name),
+                        age = VALUES(age),
+                        avatar_filename = VALUES(avatar_filename)
+                    """,
+                    (user_id, first_name, last_name, age, avatar_filename),
+                )
+        connection.commit()
