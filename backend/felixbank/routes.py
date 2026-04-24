@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from hashlib import sha256
 
 import pymysql
 from flask import Flask, flash, redirect, render_template, request, session, url_for
@@ -13,6 +14,21 @@ from .utils import decimal_input, decimal_to_str
 
 
 def register_routes(app: Flask) -> None:
+    def build_virtual_card(login_value: str) -> dict[str, str]:
+        digest = sha256(login_value.encode("utf-8")).hexdigest()
+        digits = "".join(str(int(char, 16) % 10) for char in digest)
+        card_number = f"5412 {digits[0:4]} {digits[4:8]} {digits[8:12]}"
+        exp_month = (int(digits[12:14]) % 12) + 1
+        exp_year = 26 + (int(digits[14:16]) % 5)
+        cvv = f"{int(digits[16:19]) % 1000:03d}"
+        holder = login_value.upper()[:24]
+        return {
+            "number": card_number,
+            "expiry": f"{exp_month:02d}/{exp_year:02d}",
+            "cvv": cvv,
+            "holder": holder,
+        }
+
     @app.get("/")
     def root():
         return redirect(url_for("login"))
@@ -179,6 +195,18 @@ def register_routes(app: Flask) -> None:
             login=user["login"],
             payload=payload,
             fallback=fallback,
+        )
+
+    @app.get("/profile/virtual-card")
+    @login_required
+    def virtual_card():
+        user = current_user()
+        assert user is not None
+        card = build_virtual_card(str(user["login"]))
+        return render_template(
+            "virtual_card.html",
+            login=user["login"],
+            card=card,
         )
 
     @app.get("/login/style.css")
