@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal, ROUND_HALF_UP
 
 import pymysql
-from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 
 from .auth import create_user, current_user, get_user_by_login, login_required, verify_password
 from .config import LOGIN_RE, TWOPLACES
@@ -106,14 +106,10 @@ def register_routes(app: Flask) -> None:
         user = current_user()
         assert user is not None
 
-        fallback_rates_uah_per_1 = {
+        rates_uah_per_1 = {
             "UAH": Decimal("1.0"),
             "USD": Decimal("39.5"),
         }
-        online_payload = rates_payload()
-        rates_uah_per_1 = online_payload.get("rates_uah_per_1", fallback_rates_uah_per_1)
-        if not isinstance(rates_uah_per_1, dict) or "UAH" not in rates_uah_per_1:
-            rates_uah_per_1 = fallback_rates_uah_per_1
 
         if request.method == "POST" and request.form.get("action") == "exchange":
             from_code = str(request.form.get("from") or "")
@@ -177,21 +173,13 @@ def register_routes(app: Flask) -> None:
             {"code": "KRW", "name": "Южнокорейская вона", "uah_per_1": 0.0300},
             {"code": "CNY", "name": "Китайский юань", "uah_per_1": 5.40},
         ]
-        force_refresh = request.args.get("refresh") == "1"
-        payload = rates_payload(force_refresh=force_refresh)
+        payload = rates_payload()
         return render_template(
             "rates.html",
             login=user["login"],
             payload=payload,
             fallback=fallback,
         )
-
-    @app.get("/api/rates")
-    @login_required
-    def rates_api():
-        force_refresh = request.args.get("refresh") == "1"
-        payload = rates_payload(force_refresh=force_refresh)
-        return jsonify(payload)
 
     @app.get("/login/style.css")
     def serve_login_css():

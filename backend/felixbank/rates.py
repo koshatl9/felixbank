@@ -73,44 +73,14 @@ def fetch_cbr_rates() -> dict[str, Any]:
     }
 
 
-def _normalize_online_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    rates = payload.get("rates")
-    if not isinstance(rates, list):
-        return {"ok": False, "error": "Ответ сервера с курсами повреждён."}
-
-    rates_uah_per_1: dict[str, Decimal] = {"UAH": Decimal("1")}
-    for item in rates:
-        if not isinstance(item, dict):
-            continue
-        code = str(item.get("code") or "").upper()
-        if not code:
-            continue
-        try:
-            price = Decimal(str(item.get("uah_per_1")))
-        except (InvalidOperation, TypeError):
-            continue
-        if price <= 0:
-            continue
-        rates_uah_per_1[code] = price
-
-    return {
-        "ok": bool(payload.get("ok")),
-        "error": payload.get("error"),
-        "date": str(payload.get("date") or ""),
-        "rates": rates,
-        "base": "UAH",
-        "rates_uah_per_1": rates_uah_per_1,
-    }
-
-
-def rates_payload(force_refresh: bool = False) -> dict[str, Any]:
+def rates_payload() -> dict[str, Any]:
     cache = session.get("rates_cache")
-    if not force_refresh and isinstance(cache, dict):
+    if isinstance(cache, dict):
         ts = int(cache.get("ts", 0))
         payload = cache.get("payload")
         if isinstance(payload, dict) and time.time() - ts < 120:
-            return _normalize_online_payload(payload)
+            return payload
 
     payload = fetch_cbr_rates()
     session["rates_cache"] = {"ts": int(time.time()), "payload": payload}
-    return _normalize_online_payload(payload)
+    return payload

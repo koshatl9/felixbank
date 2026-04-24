@@ -51,6 +51,12 @@
         </a>
       </nav>
 
+      <div class="support-card">
+        <div class="support-card__label">Источник</div>
+        <h2>ЦБ РФ</h2>
+        <p>Курсы пересчитаны в UAH. Ответ кешируется на 2 минуты в сессии.</p>
+        <button type="button" onclick="location.reload()">Обновить</button>
+      </div>
     </aside>
 
     <main class="dashboard">
@@ -58,14 +64,13 @@
         <div>
           <div class="hero__eyebrow">Курсы валют</div>
           <h2>На текущее время</h2>
-          <p class="hero__text" id="rates-date-text">
+          <p class="hero__text">
             {% if payload.ok and payload.date %}
               Дата обновления: <strong>{{ payload.date }}</strong>
             {% else %}
               Показаны резервные демо-курсы, источник временно недоступен.
             {% endif %}
           </p>
-          <button type="button" id="refresh-now-btn">Обновить сейчас</button>
         </div>
       </section>
 
@@ -76,23 +81,14 @@
               <div class="section-label">Список</div>
               <h3>Все валюты к UAH</h3>
             </div>
-            <span
-              id="rates-timer-badge"
-              class="status-badge"
-              style="background: rgba(104, 224, 255, 0.14); color: var(--ink);"
-            >
-              Обновление через 60с
-            </span>
-            <span
-              id="rates-status-badge"
-              class="status-badge"
-              style="background: rgba(255, 159, 199, 0.14); color: var(--danger); {% if payload.ok %}display:none;{% endif %}"
-            >
-              {% if not payload.ok and payload.error %}{{ payload.error }}{% endif %}
-            </span>
+            {% if not payload.ok and payload.error %}
+              <span class="status-badge" style="background: rgba(255, 159, 199, 0.14); color: var(--danger);">
+                {{ payload.error }}
+              </span>
+            {% endif %}
           </div>
 
-          <div class="transaction-list" id="rates-list">
+          <div class="transaction-list">
             {% set rates = payload.rates if payload.ok and payload.rates else fallback %}
             {% for r in rates %}
               <div class="transaction-item">
@@ -110,92 +106,4 @@
     </main>
   </div>
 </body>
-<script>
-  const fallbackRates = {{ fallback|tojson }};
-  const apiUrl = "{{ url_for('rates_api') }}";
-  const refreshBtn = document.getElementById("refresh-now-btn");
-  const ratesListNode = document.getElementById("rates-list");
-  const dateNode = document.getElementById("rates-date-text");
-  const timerBadge = document.getElementById("rates-timer-badge");
-  const statusBadge = document.getElementById("rates-status-badge");
-  let secondsLeft = 60;
-
-  function renderTimer() {
-    timerBadge.textContent = "Обновление через " + secondsLeft + "с";
-  }
-
-  function resetTimer() {
-    secondsLeft = 60;
-    renderTimer();
-  }
-
-  function renderRates(rates) {
-    ratesListNode.innerHTML = rates.map(function (r) {
-      const price = Number(r.uah_per_1 || 0).toFixed(4);
-      return (
-        '<div class="transaction-item">' +
-          '<div class="transaction-item__icon">₴</div>' +
-          '<div style="min-width:0;">' +
-            "<strong>" + r.code + "</strong>" +
-            "<p>" + r.name + "</p>" +
-          "</div>" +
-          '<div class="amount amount--positive">' + price + " UAH</div>" +
-        "</div>"
-      );
-    }).join("");
-  }
-
-  function updateView(payload) {
-    const onlineOk = payload && payload.ok && Array.isArray(payload.rates) && payload.rates.length > 0;
-    renderRates(onlineOk ? payload.rates : fallbackRates);
-
-    if (onlineOk && payload.date) {
-      dateNode.innerHTML = "Дата обновления: <strong>" + payload.date + "</strong>";
-    } else {
-      dateNode.textContent = "Показаны резервные демо-курсы, источник временно недоступен.";
-    }
-
-    if (onlineOk) {
-      statusBadge.style.display = "none";
-      statusBadge.textContent = "";
-    } else {
-      statusBadge.style.display = "inline-flex";
-      statusBadge.textContent = (payload && payload.error) ? payload.error : "Не удалось обновить курсы.";
-    }
-  }
-
-  function refreshRates(forceRefresh) {
-    const url = forceRefresh ? (apiUrl + "?refresh=1") : apiUrl;
-    fetch(url, { credentials: "same-origin" })
-      .then(function (response) {
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        return response.json();
-      })
-      .then(function (payload) {
-        updateView(payload);
-        resetTimer();
-      })
-      .catch(function () {
-        updateView({ ok: false, error: "Сеть недоступна или сервис курсов временно не отвечает." });
-        resetTimer();
-      });
-  }
-
-  refreshBtn.addEventListener("click", function () {
-    refreshRates(true);
-  });
-
-  setInterval(function () {
-    secondsLeft -= 1;
-    if (secondsLeft <= 0) {
-      refreshRates(true);
-      return;
-    }
-    renderTimer();
-  }, 1000);
-
-  renderTimer();
-</script>
 </html>
