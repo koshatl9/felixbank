@@ -33,6 +33,25 @@ body {
     text-align: center;
 }
 
+.wrapper__brand {
+    display: grid;
+    place-items: center;
+    margin-bottom: 14px;
+}
+
+.wrapper__brand-title {
+    margin-bottom: 8px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.wrapper__brand-image {
+    width: 120px;
+    height: auto;
+    filter: drop-shadow(0 18px 40px rgba(0, 0, 0, 0.35));
+}
+
 .input-box {
     position: relative;
     width: 100%;
@@ -111,4 +130,12 @@ body {
     margin-top: 18px;
     text-align: center;
     font-size: 14px;
+}
+
+.wrapper__error {
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.18);
+    border: 1px solid rgba(255, 255, 255, 0.22);
 }
