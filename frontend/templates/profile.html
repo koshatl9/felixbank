@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Профиль</title>
-  <link rel="stylesheet" href="{{ url_for('serve_profile_css') }}">
+  <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
 </head>
 <body>
   <div class="page-shell">
@@ -27,13 +27,18 @@
       </div>
 
       <nav class="menu">
-        <a class="menu__item menu__item--active" href="{{ url_for('profile') }}">
-          <i>🏠</i>
-          <div>
-            <div>Главная</div>
-            <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+        <div class="menu__group menu__group--open">
+          <a class="menu__item menu__item--active" href="{{ url_for('profile') }}">
+            <i>🏠</i>
+            <div>
+              <div>Главная</div>
+              <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('profile_details') }}">Профиль</a>
           </div>
-        </a>
+        </div>
         <a class="menu__item" href="{{ url_for('rates') }}">
           <i>💱</i>
           <div>
@@ -41,6 +46,19 @@
             <div class="muted" style="font-size: 12px;">На текущее время</div>
           </div>
         </a>
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('transfer') }}">
+            <i>💳</i>
+            <div>
+              <div>Переводы</div>
+              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('transfer') }}">Перевод на карту</a>
+            <a class="menu__subitem" href="{{ url_for('transfer_international') }}">Международный перевод</a>
+          </div>
+        </div>
         <a class="menu__item" href="{{ url_for('virtual_card') }}">
           <i>💜</i>
           <div>
@@ -70,9 +88,10 @@
         <div>
           <div class="hero__eyebrow">Добро пожаловать</div>
           <h2>{{ login }}</h2>
-          <p class="hero__text">Это пример профиля пользователя. Дальше сюда можно подставить данные из БД: имя, почту, аватар и настройки.</p>
+          <p class="hero__text">Профиль пользователя. Здесь можно просматривать баланс, перейти к редактированию профиля, переводам и виртуальной карте.</p>
         </div>
         <div class="hero__actions">
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
           <button class="ghost-btn" type="button" title="Выйти" onclick="location.href='{{ url_for('profile', logout=1) }}'"><i>⎋</i></button>
         </div>
       </section>
