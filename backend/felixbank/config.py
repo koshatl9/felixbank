@@ -81,6 +81,11 @@ def env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
+def env_bool(name: str, default: bool = False) -> bool:
+    raw = env(name, "1" if default else "0").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def running_in_docker() -> bool:
     return Path("/.dockerenv").exists()
 
