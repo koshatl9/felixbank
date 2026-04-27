@@ -4,25 +4,25 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Form login and password</title>
-    <link rel="stylesheet" href="{{ url_for('serve_login_css') }}">
+    <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/login.css') }}">
     <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
 </head>
 <body>
     <div class="wrapper">
-        <div style="display:grid; place-items:center; margin-bottom: 14px;">
-            <div style="margin-bottom: 8px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase;">felixBANK</div>
+        <div class="wrapper__brand">
+            <div class="wrapper__brand-title">felixBANK</div>
             <img
+                class="wrapper__brand-image"
                 src="{{ url_for('serve_assets', filename='mascot.png') }}"
                 alt="Mascot"
                 loading="lazy"
-                style="width: 120px; height: auto; filter: drop-shadow(0 18px 40px rgba(0,0,0,0.35));"
             >
         </div>
         <form action="" method="post" autocomplete="on" novalidate>
             <h1>Login</h1>
 
             {% if error %}
-                <p style="margin: 0 0 16px; padding: 10px 14px; border-radius: 14px; background: rgba(0,0,0,0.18); border: 1px solid rgba(255,255,255,0.22);">
+                <p class="wrapper__error">
                     {{ error }}
                 </p>
             {% endif %}

@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Виртуальная карта</title>
-  <link rel="stylesheet" href="{{ url_for('serve_profile_css') }}">
+  <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/virtual_card.js') }}" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -27,13 +28,18 @@
       </div>
 
       <nav class="menu">
-        <a class="menu__item" href="{{ url_for('profile') }}">
-          <i>🏠</i>
-          <div>
-            <div>Главная</div>
-            <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('profile') }}">
+            <i>🏠</i>
+            <div>
+              <div>Главная</div>
+              <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('profile_details') }}">Профиль</a>
           </div>
-        </a>
+        </div>
         <a class="menu__item" href="{{ url_for('rates') }}">
           <i>💱</i>
           <div>
@@ -41,6 +47,19 @@
             <div class="muted" style="font-size: 12px;">На текущее время</div>
           </div>
         </a>
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('transfer') }}">
+            <i>💳</i>
+            <div>
+              <div>Переводы</div>
+              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('transfer') }}">Перевод на карту</a>
+            <a class="menu__subitem" href="{{ url_for('transfer_international') }}">Международный перевод</a>
+          </div>
+        </div>
         <a class="menu__item menu__item--active" href="{{ url_for('virtual_card') }}">
           <i>💜</i>
           <div>
@@ -65,6 +84,7 @@
           <h2>Виртуальная карта</h2>
           <p class="hero__text">Ниже отображаются полные реквизиты вашей виртуальной карты для онлайн-платежей.</p>
         </div>
+        <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
       </section>
 
       <section class="content-grid">
@@ -82,7 +102,7 @@
             </div>
             <div>
               <span>CVV</span>
-              <strong>{{ card.cvv }}</strong>
+              <strong class="cvv-reveal" data-cvv="{{ card.cvv }}">**</strong>
             </div>
           </div>
         </article>
@@ -96,7 +116,7 @@
           </div>
           <div class="profile-meta" style="grid-template-columns: 1fr; gap: 12px;">
             <div>
-              <span>Номер карты</span>
+              <span>номер карты</span>
               <strong>{{ card.number }}</strong>
             </div>
             <div>
@@ -105,7 +125,8 @@
             </div>
             <div>
               <span>CVV код</span>
-              <strong>{{ card.cvv }}</strong>
+              <strong class="cvv-reveal" data-cvv="{{ card.cvv }}">**</strong>
+
             </div>
           </div>
         </article>
