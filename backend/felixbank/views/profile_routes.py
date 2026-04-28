@@ -4,7 +4,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from uuid import uuid4
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 from werkzeug.utils import secure_filename
 
 from ..auth import current_user, login_required
@@ -165,6 +165,27 @@ def register_profile_routes(app: Flask) -> None:
             fallback=fallback,
             profile_data=user_profile,
             avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
+        )
+
+    @app.get("/profile/rates/data")
+    @login_required
+    def rates_data():
+        fallback = [
+            {"code": "USD", "name": "Доллар США", "uah_per_1": 39.50},
+            {"code": "EUR", "name": "Евро", "uah_per_1": 43.00},
+            {"code": "JPY", "name": "Японская иена", "uah_per_1": 0.2600},
+            {"code": "KRW", "name": "Южнокорейская вона", "uah_per_1": 0.0300},
+            {"code": "CNY", "name": "Китайский юань", "uah_per_1": 5.40},
+        ]
+        payload = rates_payload()
+        rates = payload.get("rates") if payload.get("ok") else fallback
+        return jsonify(
+            {
+                "ok": bool(payload.get("ok")),
+                "date": payload.get("date") or "",
+                "error": payload.get("error") or "",
+                "rates": rates,
+            }
         )
 
     @app.get("/profile/virtual-card")
