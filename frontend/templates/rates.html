@@ -135,7 +135,7 @@
                   <strong>{{ r.code }}</strong>
                   <p>{{ r.name }}</p>
                 </div>
-                <div class="amount amount--positive">{{ '%.4f'|format(r.uah_per_1) }} UAH</div>
+              <div class="amount amount--positive">{{ r.uah_per_1|round(4) }} UAH</div>
               </div>
             {% endfor %}
           </div>
@@ -164,7 +164,7 @@
           </div>
           <div class="rates-chart-meta">
             <div>
-              <div class="rates-chart-meta__value" id="rates-chart-value">0.0000</div>
+              <div class="rates-chart-meta__value" id="rates-chart-value">0</div>
               <div class="rates-chart-meta__label" id="rates-chart-caption">Курс к UAH</div>
             </div>
             <div style="text-align:right;">
@@ -173,10 +173,33 @@
             </div>
           </div>
           <div class="rates-intervals" id="rates-intervals">
-            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1h">1ч</button>
+            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1y">1г</button>
           </div>
           <div class="rates-chart-card">
-            <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 360" role="img" aria-label="График курсов валют"></svg>
+            <div class="rates-chart-toolbar">
+              <div class="rates-chart-source" id="rates-chart-source">Источник графика: MySQL · currency_rates_history</div>
+              <div class="rates-chart-source" id="rates-chart-sample-size">Точки: 0</div>
+            </div>
+            <div class="rates-chart-stage">
+              <div class="rates-chart-tooltip" id="rates-chart-tooltip" hidden></div>
+              <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 360" role="img" aria-label="График курсов валют"></svg>
+            </div>
+            <div class="rates-history-table-wrap">
+              <table class="rates-history-table">
+                <thead>
+                  <tr>
+                    <th>Валюта</th>
+                    <th>Курс к UAH</th>
+                    <th>Время записи</th>
+                  </tr>
+                </thead>
+                <tbody id="rates-history-table-body">
+                  <tr>
+                    <td colspan="3">Загрузка данных из MySQL...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </article>
       </section>
@@ -198,12 +221,27 @@
       const chartTrendEl = document.getElementById("rates-chart-trend");
       const chartHintEl = document.getElementById("rates-chart-hint");
       const intervalsEl = document.getElementById("rates-intervals");
+      const chartTooltipEl = document.getElementById("rates-chart-tooltip");
+      const chartSourceEl = document.getElementById("rates-chart-source");
+      const chartSampleSizeEl = document.getElementById("rates-chart-sample-size");
+      const historyTableBodyEl = document.getElementById("rates-history-table-body");
       let startedAt = Date.now();
       let currentRates = {% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %};
-      let selectedRange = "1h";
+      let selectedRange = "1y";
 
       function formatRate(value) {
-        return `${Number(value || 0).toFixed(4)} UAH`;
+        return `${formatCompactNumber(value)} UAH`;
+      }
+
+      function formatCompactNumber(value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || Math.abs(numeric) < 1e-12) {
+          return "0";
+        }
+        const normalized = numeric.toFixed(4);
+        return normalized
+          .replace(/(\.\d*?[1-9])0+$/, "$1")
+          .replace(/\.0+$/, "");
       }
 
       function escapeHtml(value) {
@@ -221,24 +259,85 @@
         url.searchParams.set("range", range);
         const response = await fetch(url.toString(), { cache: "no-store" });
         if (!response.ok) throw new Error("history fetch failed");
-        const data = await response.json();
-        return Array.isArray(data.points) ? data.points : [];
+        return response.json();
       }
 
-      function formatTimeLabel(timestamp) {
+      function formatTimeLabel(timestamp, range) {
+        if (range === "1y") {
+          return new Date(timestamp).toLocaleDateString("ru-RU", {
+            month: "2-digit",
+            year: "2-digit"
+          });
+        }
         return new Date(timestamp).toLocaleTimeString("ru-RU", {
           hour: "2-digit",
           minute: "2-digit"
         });
       }
 
+      function formatTooltipLabel(timestamp, value) {
+        const dateTime = new Date(timestamp).toLocaleString("ru-RU", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        return `${dateTime} - ${formatCompactNumber(value)} UAH`;
+      }
+
+      function formatAxisLabel(timestamp, range, spanMs) {
+        if (range === "1y") {
+          if (spanMs >= 90 * 24 * 60 * 60 * 1000) {
+            return new Date(timestamp).toLocaleDateString("ru-RU", {
+              month: "2-digit",
+              year: "2-digit"
+            });
+          }
+          if (spanMs >= 2 * 24 * 60 * 60 * 1000) {
+            return new Date(timestamp).toLocaleDateString("ru-RU", {
+              day: "2-digit",
+              month: "2-digit"
+            });
+          }
+          return new Date(timestamp).toLocaleTimeString("ru-RU", {
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        }
+        return formatTimeLabel(timestamp, range);
+      }
+
+      function formatCoverageLabel(startTs, endTs) {
+        if (!Number.isFinite(startTs) || !Number.isFinite(endTs)) {
+          return "нет данных";
+        }
+        if (endTs - startTs >= 24 * 60 * 60 * 1000) {
+          const start = new Date(startTs).toLocaleDateString("ru-RU");
+          const end = new Date(endTs).toLocaleDateString("ru-RU");
+          return `${start} - ${end}`;
+        }
+        const day = new Date(endTs).toLocaleDateString("ru-RU");
+        const start = new Date(startTs).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        const end = new Date(endTs).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+        return `${day}, ${start} - ${end}`;
+      }
+
       function rangeLabel(range) {
+        if (range === "1y") return "1г";
         if (range === "1h") return "1ч";
         if (range === "5m") return "5м";
         return "1м";
       }
 
       function pointsForRange(range) {
+        if (range === "1y") return 365;
         if (range === "1h") return 60;
         if (range === "5m") return 5;
         return 1;
@@ -249,12 +348,14 @@
       }
 
       function minimumDisplayPoints(range) {
+        if (range === "1y") return 2;
         if (range === "1h") return 8;
         if (range === "5m") return 5;
         return 4;
       }
 
       function rangeDurationMs(range) {
+        if (range === "1y") return 365 * 24 * 60 * 60 * 1000;
         if (range === "1h") return 60 * 60 * 1000;
         if (range === "5m") return 5 * 60 * 1000;
         return 60 * 1000;
@@ -286,13 +387,15 @@
         }
 
         const minimumPoints = minimumDisplayPoints(range);
-        const stepMs = Math.max(1000, Math.round(rangeDurationMs(range) / Math.max(minimumPoints - 1, 1)));
-        while (normalized.length < minimumPoints) {
-          const firstPoint = normalized[0];
-          normalized.unshift({
-            ts: firstPoint.ts - stepMs,
-            value: firstPoint.value
-          });
+        if (range !== "1y") {
+          const stepMs = Math.max(1000, Math.round(rangeDurationMs(range) / Math.max(minimumPoints - 1, 1)));
+          while (normalized.length < minimumPoints) {
+            const firstPoint = normalized[0];
+            normalized.unshift({
+              ts: firstPoint.ts - stepMs,
+              value: firstPoint.value
+            });
+          }
         }
 
         return normalized.slice(-Math.max(displayPointsForRange(range), minimumPoints));
@@ -301,6 +404,9 @@
       function labelIndicesForRange(total, range) {
         if (total <= 1) {
           return new Set([0]);
+        }
+        if (range === "1y") {
+          return new Set();
         }
         const maxLabels = range === "1h" ? 6 : 4;
         if (total <= maxLabels) {
@@ -328,6 +434,53 @@
             </div>
           `;
         }).join("");
+      }
+
+      function renderHistoryTable(code, rows) {
+        if (!historyTableBodyEl) return;
+        if (!Array.isArray(rows) || !rows.length) {
+          historyTableBodyEl.innerHTML = `
+            <tr>
+              <td colspan="3">В MySQL пока нет истории для ${escapeHtml(code)}.</td>
+            </tr>
+          `;
+          return;
+        }
+
+        historyTableBodyEl.innerHTML = rows.map(function (row) {
+          return `
+            <tr>
+              <td>${escapeHtml(row.currency_code || code)}</td>
+              <td>${formatRate(row.uah_per_1)}</td>
+              <td>${escapeHtml(row.created_at_label || "")}</td>
+            </tr>
+          `;
+        }).join("");
+      }
+
+      function showTooltip(event, code, pointValue, pointTs) {
+        if (!chartTooltipEl || !chartEl) return;
+        const chartBounds = chartEl.getBoundingClientRect();
+        const tooltipWidth = 190;
+        const relativeX = Math.min(
+          Math.max(12, event.clientX - chartBounds.left + 14),
+          Math.max(12, chartBounds.width - tooltipWidth - 12)
+        );
+        const relativeY = Math.max(12, event.clientY - chartBounds.top - 64);
+
+        chartTooltipEl.innerHTML = `
+          <strong>${escapeHtml(code)}</strong>
+          <span>${escapeHtml(formatTooltipLabel(pointTs, pointValue))}</span>
+        `;
+        chartTooltipEl.style.left = `${relativeX}px`;
+        chartTooltipEl.style.top = `${relativeY}px`;
+        chartTooltipEl.hidden = false;
+      }
+
+      function hideTooltip() {
+        if (chartTooltipEl) {
+          chartTooltipEl.hidden = true;
+        }
       }
 
       function getSelectedCode() {
@@ -368,12 +521,14 @@
           chartEl.innerHTML = "";
           return;
         }
-        let fullSeries = [];
+        let historyPayload = null;
         try {
-          fullSeries = await fetchHistory(selected.code, selectedRange);
+          historyPayload = await fetchHistory(selected.code, selectedRange);
         } catch (error) {
-          fullSeries = [];
+          historyPayload = null;
         }
+        let fullSeries = historyPayload && Array.isArray(historyPayload.points) ? historyPayload.points : [];
+        const recentRows = historyPayload && Array.isArray(historyPayload.rows) ? historyPayload.rows : [];
         const width = 760;
         const height = 360;
         const topPadding = 28;
@@ -390,10 +545,15 @@
         const minValue = Math.min.apply(null, values);
         const maxValue = Math.max.apply(null, values);
         const safeRange = Math.max(maxValue - minValue, maxValue * 0.03 || 1);
+        const actualStartTs = series[0].ts;
+        const latestTs = series[series.length - 1].ts;
+        const earliestTs = actualStartTs;
+        const timeSpan = Math.max(1, latestTs - earliestTs);
+        const coverageLabel = formatCoverageLabel(actualStartTs, latestTs);
 
-        function xFor(index, total) {
-          if (total <= 1) return leftPadding + plotWidth / 2;
-          return leftPadding + (plotWidth / (total - 1)) * index;
+        function xFor(pointTs) {
+          if (series.length <= 1) return leftPadding + plotWidth / 2;
+          return leftPadding + ((pointTs - earliestTs) / timeSpan) * plotWidth;
         }
 
         function yFor(value) {
@@ -403,37 +563,45 @@
 
         const gridLines = [0, 0.25, 0.5, 0.75, 1].map(function (step) {
           const y = topPadding + plotHeight * step;
-          const value = (maxValue - safeRange * step).toFixed(4);
+          const value = formatCompactNumber(maxValue - safeRange * step);
           return `
             <line x1="${leftPadding}" y1="${y}" x2="${width - rightPadding}" y2="${y}" class="rates-chart__grid" />
             <text x="${leftPadding - 8}" y="${y + 4}" text-anchor="end" class="rates-chart__axis-label">${value}</text>
           `;
         }).join("");
 
-        const labelIndices = labelIndicesForRange(series.length, selectedRange);
-        const timeLabels = series.map(function (point, index, arr) {
-          if (!labelIndices.has(index)) {
-            return "";
-          }
-          const x = xFor(index, arr.length);
-          const labelClass = index === arr.length - 1 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
-          return `<text x="${x}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatTimeLabel(point.ts)}</text>`;
-        }).join("");
+        const timeLabels = selectedRange === "1y"
+          ? Array.from({ length: 7 }, function (_, index) {
+              const ratio = index / 6;
+              const labelTs = earliestTs + timeSpan * ratio;
+              const labelClass = index === 6 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
+              return `<text x="${xFor(labelTs)}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatAxisLabel(labelTs, selectedRange, timeSpan)}</text>`;
+            }).join("")
+          : (function () {
+              const labelIndices = labelIndicesForRange(series.length, selectedRange);
+              return series.map(function (point, index, arr) {
+                if (!labelIndices.has(index)) {
+                  return "";
+                }
+                const labelClass = index === arr.length - 1 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
+                return `<text x="${xFor(point.ts)}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatAxisLabel(point.ts, selectedRange, timeSpan)}</text>`;
+              }).join("");
+            })();
 
         const linePath = series.map(function (point, index) {
-          return `${index === 0 ? "M" : "L"} ${xFor(index, series.length)} ${yFor(point.value)}`;
+          return `${index === 0 ? "M" : "L"} ${xFor(point.ts)} ${yFor(point.value)}`;
         }).join(" ");
         const fillPath = linePath
-          ? `${linePath} L ${xFor(series.length - 1, series.length)} ${topPadding + plotHeight} L ${xFor(0, series.length)} ${topPadding + plotHeight} Z`
+          ? `${linePath} L ${xFor(series[series.length - 1].ts)} ${topPadding + plotHeight} L ${xFor(series[0].ts)} ${topPadding + plotHeight} Z`
           : "";
         const segments = series.slice(1).map(function (point, index) {
           const previous = series[index];
           const color = point.value >= previous.value ? "#c084fc" : "#8b5cf6";
           return `
             <line
-              x1="${xFor(index, series.length)}"
+              x1="${xFor(previous.ts)}"
               y1="${yFor(previous.value)}"
-              x2="${xFor(index + 1, series.length)}"
+              x2="${xFor(point.ts)}"
               y2="${yFor(point.value)}"
               class="rates-chart__line-segment"
               style="stroke:${color};"
@@ -443,12 +611,12 @@
 
         const latest = series[series.length - 1];
         const previous = series.length > 1 ? series[series.length - 2] : latest;
-        const latestX = xFor(series.length - 1, series.length);
+        const latestX = xFor(latest.ts);
         const latestY = yFor(latest.value);
         const trendUp = latest.value >= previous.value;
         const trendDelta = latest.value - previous.value;
         if (chartValueEl) {
-          chartValueEl.textContent = latest.value.toFixed(4);
+          chartValueEl.textContent = formatCompactNumber(latest.value);
         }
         if (chartCaptionEl) {
           chartCaptionEl.textContent = `${selected.code} к UAH, интервал ${rangeLabel(selectedRange)}`;
@@ -462,9 +630,17 @@
         if (chartHintEl) {
           const enoughPoints = fullSeries.length >= minimumDisplayPoints(selectedRange);
           chartHintEl.textContent = !enoughPoints
-            ? "Показываем последние доступные точки. История ещё заполняется, обновление идёт раз в 60 секунд."
-            : `Изменение: ${trendDelta >= 0 ? "+" : ""}${trendDelta.toFixed(4)}. Real-time симулируется обновлением раз в 60 секунд.`;
+            ? `Показываем весь доступный период из MySQL: ${coverageLabel}. Режим кнопки — до 1 года.`
+            : `Период данных: ${coverageLabel}. Изменение: ${trendDelta >= 0 ? "+" : ""}${formatCompactNumber(trendDelta)}.`;
         }
+        if (chartSourceEl) {
+          const sourceTable = historyPayload && historyPayload.source_table ? historyPayload.source_table : "currency_rates_history";
+          chartSourceEl.textContent = `Источник графика: MySQL · ${sourceTable}`;
+        }
+        if (chartSampleSizeEl) {
+          chartSampleSizeEl.textContent = `Точки: ${series.length} · период: ${coverageLabel}`;
+        }
+        renderHistoryTable(selected.code, recentRows);
 
         chartEl.innerHTML = `
           <defs>
@@ -480,12 +656,52 @@
           ${series.map(function (point, index) {
             const prev = index > 0 ? series[index - 1] : point;
             const pointColor = point.value >= prev.value ? "#4cd47a" : "#ff6b7f";
-            return `<circle cx="${xFor(index, series.length)}" cy="${yFor(point.value)}" r="${index === series.length - 1 ? 7 : 4.5}" class="rates-chart__point${index === series.length - 1 ? " rates-chart__point--active" : ""}" style="fill:${pointColor};" />`;
+            const pointTooltip = escapeHtml(formatTooltipLabel(point.ts, point.value));
+            return `<circle cx="${xFor(point.ts)}" cy="${yFor(point.value)}" r="${index === series.length - 1 ? 7 : 4.5}" class="rates-chart__point${index === series.length - 1 ? " rates-chart__point--active" : ""}" style="fill:${pointColor};" data-point-index="${index}" data-point-ts="${point.ts}" data-point-value="${point.value}" tabindex="0"><title>${pointTooltip}</title></circle>`;
           }).join("")}
           <line x1="${latestX}" y1="${topPadding}" x2="${latestX}" y2="${topPadding + plotHeight}" class="rates-chart__cursor" />
-          <text x="${Math.max(leftPadding + 16, latestX - 70)}" y="${Math.max(topPadding + 26, latestY - 18)}" class="rates-chart__tooltip-value">${latest.value.toFixed(4)}</text>
+          <text x="${Math.max(leftPadding + 16, latestX - 70)}" y="${Math.max(topPadding + 26, latestY - 18)}" class="rates-chart__tooltip-value">${formatCompactNumber(latest.value)}</text>
           ${timeLabels}
         `;
+
+        const baseValue = formatCompactNumber(latest.value);
+        const baseCaption = `${selected.code} к UAH, интервал ${rangeLabel(selectedRange)}`;
+        const pointNodes = chartEl.querySelectorAll("[data-point-index]");
+        pointNodes.forEach(function (pointNode) {
+          const pointValue = Number(pointNode.getAttribute("data-point-value") || 0);
+          const pointTs = Number(pointNode.getAttribute("data-point-ts") || 0);
+
+          function activatePoint(event) {
+            if (chartValueEl) {
+              chartValueEl.textContent = formatCompactNumber(pointValue);
+            }
+            if (chartCaptionEl) {
+              chartCaptionEl.textContent = `${selected.code} к UAH, ${formatAxisLabel(pointTs, selectedRange, timeSpan)}`;
+            }
+            showTooltip(event, selected.code, pointValue, pointTs);
+          }
+
+          function deactivatePoint() {
+            if (chartValueEl) {
+              chartValueEl.textContent = baseValue;
+            }
+            if (chartCaptionEl) {
+              chartCaptionEl.textContent = baseCaption;
+            }
+            hideTooltip();
+          }
+
+          pointNode.addEventListener("mouseenter", activatePoint);
+          pointNode.addEventListener("mousemove", activatePoint);
+          pointNode.addEventListener("mouseleave", deactivatePoint);
+          pointNode.addEventListener("focus", function () {
+            activatePoint({
+              clientX: chartEl.getBoundingClientRect().left + Number(pointNode.getAttribute("cx") || 0),
+              clientY: chartEl.getBoundingClientRect().top + Number(pointNode.getAttribute("cy") || 0),
+            });
+          });
+          pointNode.addEventListener("blur", deactivatePoint);
+        });
       }
 
       function applyPayload(data) {
@@ -555,7 +771,7 @@
         intervalsEl.addEventListener("click", function (event) {
           const button = event.target.closest("[data-range]");
           if (!button) return;
-          selectedRange = button.getAttribute("data-range") || "1h";
+          selectedRange = button.getAttribute("data-range") || "1y";
           intervalsEl.querySelectorAll("[data-range]").forEach(function (item) {
             item.classList.toggle("rates-intervals__item--active", item === button);
           });
