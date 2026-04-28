@@ -440,6 +440,27 @@ body {
     letter-spacing: 0.08em;
 }
 
+.card-lock {
+    margin-top: 18px;
+    display: grid;
+    gap: 8px;
+}
+
+.card-lock__button {
+    margin-top: 0;
+    width: fit-content;
+}
+
+.card-lock__button.is-locked {
+    background: linear-gradient(135deg, #6b21a8, #581c87);
+}
+
+.card-lock__hint {
+    margin: 0;
+    color: var(--text-soft);
+    font-size: 12px;
+}
+
 .bank-card__footer {
     display: flex;
     justify-content: space-between;
@@ -970,6 +991,11 @@ body {
 }
 
 .cvv-reveal {
+    cursor: pointer;
+    user-select: none;
+}
+
+.card-number-reveal {
     cursor: pointer;
     user-select: none;
 }
