@@ -85,6 +85,16 @@ SCHEMA_STATEMENTS = (
         INDEX idx_rates_history_code_time (currency_code, created_at)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS virtual_cards (
+        user_id INT NOT NULL PRIMARY KEY,
+        is_blocked TINYINT(1) NOT NULL DEFAULT 0,
+        updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        CONSTRAINT fk_virtual_cards_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE
+    )
+    """,
 )
 
 

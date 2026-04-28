@@ -248,6 +248,39 @@ def get_user_profile(user_id: int) -> dict[str, Any]:
     return row
 
 
+def get_virtual_card_blocked(user_id: int) -> bool:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT is_blocked
+                FROM virtual_cards
+                WHERE user_id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        return False
+    return bool(row.get("is_blocked"))
+
+
+def set_virtual_card_blocked(user_id: int, is_blocked: bool) -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO virtual_cards (user_id, is_blocked)
+                VALUES (%s, %s)
+                ON DUPLICATE KEY UPDATE is_blocked = VALUES(is_blocked)
+                """,
+                (user_id, 1 if is_blocked else 0),
+            )
+        connection.commit()
+
+
 def save_user_profile(
     user_id: int,
     first_name: str,

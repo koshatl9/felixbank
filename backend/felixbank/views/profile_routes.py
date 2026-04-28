@@ -16,8 +16,10 @@ from ..db import (
     get_recent_rates_rows,
     get_rates_history,
     get_user_profile,
+    get_virtual_card_blocked,
     insert_rates_history,
     save_user_profile,
+    set_virtual_card_blocked,
     update_balances,
 )
 from ..rates import rates_payload
@@ -258,11 +260,24 @@ def register_profile_routes(app: Flask) -> None:
         user = current_user()
         assert user is not None
         card = build_virtual_card(str(user["login"]))
+        card_blocked = get_virtual_card_blocked(int(user["id"]))
         user_profile = get_user_profile(int(user["id"]))
         return render_template(
             "virtual_card.html",
             login=user["login"],
             card=card,
+            card_blocked=card_blocked,
             profile_data=user_profile,
             avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
         )
+
+    @app.post("/profile/virtual-card/lock")
+    @login_required
+    def virtual_card_lock():
+        user = current_user()
+        assert user is not None
+
+        payload = request.get_json(silent=True) or {}
+        blocked = bool(payload.get("blocked"))
+        set_virtual_card_blocked(int(user["id"]), blocked)
+        return jsonify({"ok": True, "blocked": blocked})
