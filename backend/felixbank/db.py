@@ -300,27 +300,55 @@ def insert_rates_history(points: list[dict[str, Any]]) -> None:
         connection.commit()
 
 
-def get_rates_history(currency_code: str, since_seconds: int, limit: int) -> list[dict[str, Any]]:
+def get_rates_history(
+    currency_code: str,
+    since_seconds: int,
+    limit: int,
+    aggregate_by_day: bool = False,
+) -> list[dict[str, Any]]:
     code = (currency_code or "").strip().upper()[:3]
     if not code:
         return []
     since = datetime.now(tz=timezone.utc) - timedelta(seconds=max(0, int(since_seconds)))
     with get_db() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                SELECT
-                    UNIX_TIMESTAMP(created_at) * 1000 AS ts,
-                    uah_per_1 AS value
-                FROM currency_rates_history
-                WHERE currency_code = %s AND created_at >= %s
-                ORDER BY created_at ASC, id ASC
-                LIMIT %s
-                """,
-                (code, since.replace(tzinfo=None), int(limit)),
-            )
+            if aggregate_by_day:
+                cursor.execute(
+                    """
+                    SELECT
+                        UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                        uah_per_1 AS value
+                    FROM currency_rates_history
+                    WHERE id IN (
+                        SELECT max_ids.id
+                        FROM (
+                            SELECT MAX(id) AS id
+                            FROM currency_rates_history
+                            WHERE currency_code = %s AND created_at >= %s
+                            GROUP BY DATE(created_at)
+                            ORDER BY DATE(created_at) DESC
+                            LIMIT %s
+                        ) AS max_ids
+                    )
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (code, since.replace(tzinfo=None), int(limit)),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                        uah_per_1 AS value
+                    FROM currency_rates_history
+                    WHERE currency_code = %s AND created_at >= %s
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT %s
+                    """,
+                    (code, since.replace(tzinfo=None), int(limit)),
+                )
             rows = cursor.fetchall()
-            if len(rows) < 2:
+            if len(rows) < 2 or (aggregate_by_day and len(rows) < 7):
                 cursor.execute(
                     """
                     SELECT ts, value
@@ -335,7 +363,29 @@ def get_rates_history(currency_code: str, since_seconds: int, limit: int) -> lis
                     ) AS latest_points
                     ORDER BY ts ASC
                     """,
-                    (code, int(limit)),
+                    (code, min(int(limit), 180)),
                 )
                 rows = cursor.fetchall()
     return [{"ts": int(row["ts"]), "value": float(row["value"])} for row in rows]
+
+
+def get_recent_rates_rows(currency_code: str, limit: int = 8) -> list[dict[str, Any]]:
+    code = (currency_code or "").strip().upper()[:3]
+    if not code:
+        return []
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT currency_code, uah_per_1, created_at
+                FROM currency_rates_history
+                WHERE currency_code = %s
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (code, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+
+    return rows

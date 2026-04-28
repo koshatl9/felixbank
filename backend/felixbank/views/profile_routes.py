@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
+from datetime import datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from ..config import TWOPLACES
 from ..db import (
     get_all_user_logins,
     get_balances,
+    get_recent_rates_rows,
     get_rates_history,
     get_user_profile,
     insert_rates_history,
@@ -207,15 +209,48 @@ def register_profile_routes(app: Flask) -> None:
     @login_required
     def rates_history():
         code = str(request.args.get("code") or "USD").upper()[:3]
-        range_raw = str(request.args.get("range") or "1m").lower().strip()
-        seconds_map = {"1m": 60, "5m": 300, "1h": 3600}
-        since_seconds = seconds_map.get(range_raw, 60)
-        limit = max(2, min(120, since_seconds // 60 + 2))
+        range_raw = str(request.args.get("range") or "1y").lower().strip()
+        seconds_map = {"1h": 3600, "1y": 365 * 24 * 3600}
+        since_seconds = seconds_map.get(range_raw, 365 * 24 * 3600)
+        aggregate_by_day = range_raw == "1y"
+        limit = 366 if aggregate_by_day else max(2, min(120, since_seconds // 60 + 2))
         try:
-            points = get_rates_history(code, since_seconds=since_seconds, limit=limit)
+            points = get_rates_history(
+                code,
+                since_seconds=since_seconds,
+                limit=limit,
+                aggregate_by_day=aggregate_by_day,
+            )
+            recent_rows = get_recent_rates_rows(code, limit=8)
         except Exception:
             points = []
-        return jsonify({"ok": True, "code": code, "range": range_raw, "points": points})
+            recent_rows = []
+
+        def format_recent_row(row: dict[str, object]) -> dict[str, object]:
+            created_at = row.get("created_at")
+            if isinstance(created_at, datetime):
+                created_at_iso = created_at.isoformat()
+                created_at_label = created_at.strftime("%d.%m %H:%M:%S")
+            else:
+                created_at_iso = str(created_at or "")
+                created_at_label = str(created_at or "")
+            return {
+                "currency_code": str(row.get("currency_code") or code),
+                "uah_per_1": float(row.get("uah_per_1") or 0),
+                "created_at": created_at_iso,
+                "created_at_label": created_at_label,
+            }
+
+        return jsonify(
+            {
+                "ok": True,
+                "code": code,
+                "range": range_raw,
+                "points": points,
+                "rows": [format_recent_row(row) for row in recent_rows],
+                "source_table": "currency_rates_history",
+            }
+        )
 
     @app.get("/profile/virtual-card")
     @login_required
