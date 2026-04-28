@@ -12,13 +12,40 @@ from ..config import TWOPLACES
 from ..db import (
     get_all_user_logins,
     get_balances,
+    get_rates_history,
     get_user_profile,
+    insert_rates_history,
     save_user_profile,
     update_balances,
 )
 from ..rates import rates_payload
 from ..utils import decimal_input, decimal_to_str
 from .common import ALLOWED_AVATAR_EXT, RATES_UAH_PER_1, avatar_url_for, build_virtual_card
+
+
+def _fallback_rates() -> list[dict[str, object]]:
+    return [
+        {"code": "USD", "name": "Доллар США", "uah_per_1": 39.50},
+        {"code": "EUR", "name": "Евро", "uah_per_1": 43.00},
+        {"code": "JPY", "name": "Японская иена", "uah_per_1": 0.2600},
+        {"code": "KRW", "name": "Южнокорейская вона", "uah_per_1": 0.0300},
+        {"code": "CNY", "name": "Китайский юань", "uah_per_1": 5.40},
+    ]
+
+
+def _rates_for_chart_and_storage(payload: dict[str, object]) -> list[dict[str, object]]:
+    rates = payload.get("rates")
+    if isinstance(rates, list) and rates:
+        return rates
+    return _fallback_rates()
+
+
+def _store_rates_history_safely(rates: list[dict[str, object]]) -> None:
+    try:
+        insert_rates_history(rates)
+    except Exception:
+        # История не должна ломать страницу курсов.
+        pass
 
 
 def register_profile_routes(app: Flask) -> None:
@@ -149,15 +176,9 @@ def register_profile_routes(app: Flask) -> None:
         user = current_user()
         assert user is not None
         user_profile = get_user_profile(int(user["id"]))
-
-        fallback = [
-            {"code": "USD", "name": "Доллар США", "uah_per_1": 39.50},
-            {"code": "EUR", "name": "Евро", "uah_per_1": 43.00},
-            {"code": "JPY", "name": "Японская иена", "uah_per_1": 0.2600},
-            {"code": "KRW", "name": "Южнокорейская вона", "uah_per_1": 0.0300},
-            {"code": "CNY", "name": "Китайский юань", "uah_per_1": 5.40},
-        ]
         payload = rates_payload()
+        fallback = _fallback_rates()
+        _store_rates_history_safely(_rates_for_chart_and_storage(payload))
         return render_template(
             "rates.html",
             login=user["login"],
@@ -170,15 +191,9 @@ def register_profile_routes(app: Flask) -> None:
     @app.get("/profile/rates/data")
     @login_required
     def rates_data():
-        fallback = [
-            {"code": "USD", "name": "Доллар США", "uah_per_1": 39.50},
-            {"code": "EUR", "name": "Евро", "uah_per_1": 43.00},
-            {"code": "JPY", "name": "Японская иена", "uah_per_1": 0.2600},
-            {"code": "KRW", "name": "Южнокорейская вона", "uah_per_1": 0.0300},
-            {"code": "CNY", "name": "Китайский юань", "uah_per_1": 5.40},
-        ]
         payload = rates_payload()
-        rates = payload.get("rates") if payload.get("ok") else fallback
+        rates = _rates_for_chart_and_storage(payload)
+        _store_rates_history_safely(rates)
         return jsonify(
             {
                 "ok": bool(payload.get("ok")),
@@ -187,6 +202,20 @@ def register_profile_routes(app: Flask) -> None:
                 "rates": rates,
             }
         )
+
+    @app.get("/profile/rates/history")
+    @login_required
+    def rates_history():
+        code = str(request.args.get("code") or "USD").upper()[:3]
+        range_raw = str(request.args.get("range") or "1m").lower().strip()
+        seconds_map = {"1m": 60, "5m": 300, "1h": 3600}
+        since_seconds = seconds_map.get(range_raw, 60)
+        limit = max(2, min(120, since_seconds // 60 + 2))
+        try:
+            points = get_rates_history(code, since_seconds=since_seconds, limit=limit)
+        except Exception:
+            points = []
+        return jsonify({"ok": True, "code": code, "range": range_raw, "points": points})
 
     @app.get("/profile/virtual-card")
     @login_required

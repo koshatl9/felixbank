@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -282,3 +283,59 @@ def save_user_profile(
                     (user_id, first_name, last_name, age, avatar_filename),
                 )
         connection.commit()
+
+
+def insert_rates_history(points: list[dict[str, Any]]) -> None:
+    if not points:
+        return
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                """
+                INSERT INTO currency_rates_history (currency_code, uah_per_1)
+                VALUES (%s, %s)
+                """,
+                [(str(p["code"]), str(p["uah_per_1"])) for p in points if p.get("code") and p.get("uah_per_1")],
+            )
+        connection.commit()
+
+
+def get_rates_history(currency_code: str, since_seconds: int, limit: int) -> list[dict[str, Any]]:
+    code = (currency_code or "").strip().upper()[:3]
+    if not code:
+        return []
+    since = datetime.now(tz=timezone.utc) - timedelta(seconds=max(0, int(since_seconds)))
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                    uah_per_1 AS value
+                FROM currency_rates_history
+                WHERE currency_code = %s AND created_at >= %s
+                ORDER BY created_at ASC, id ASC
+                LIMIT %s
+                """,
+                (code, since.replace(tzinfo=None), int(limit)),
+            )
+            rows = cursor.fetchall()
+            if len(rows) < 2:
+                cursor.execute(
+                    """
+                    SELECT ts, value
+                    FROM (
+                        SELECT
+                            UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                            uah_per_1 AS value
+                        FROM currency_rates_history
+                        WHERE currency_code = %s
+                        ORDER BY created_at DESC, id DESC
+                        LIMIT %s
+                    ) AS latest_points
+                    ORDER BY ts ASC
+                    """,
+                    (code, int(limit)),
+                )
+                rows = cursor.fetchall()
+    return [{"ts": int(row["ts"]), "value": float(row["value"])} for row in rows]

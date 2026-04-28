@@ -15,7 +15,9 @@ PROJECT_DIR = BACKEND_DIR.parent
 FRONTEND_DIR = PROJECT_DIR / "frontend"
 LEGACY_USERS_PATH = BACKEND_DIR / "data" / "users.json"
 
-load_dotenv(PROJECT_DIR / ".env")
+# Важно: override=True, чтобы локальные переменные окружения не "перебивали" .env.
+# Иначе легко получить MYSQL_PORT=3306 из глобальной среды и "Can't connect".
+load_dotenv(PROJECT_DIR / ".env", override=True)
 
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 TWOPLACES = Decimal("0.01")
@@ -72,6 +74,15 @@ SCHEMA_STATEMENTS = (
         CONSTRAINT fk_user_profiles_user
             FOREIGN KEY (user_id) REFERENCES users(id)
             ON DELETE CASCADE
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS currency_rates_history (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        currency_code CHAR(3) NOT NULL,
+        uah_per_1 DECIMAL(18, 6) NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_rates_history_code_time (currency_code, created_at)
     )
     """,
 )
