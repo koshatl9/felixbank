@@ -147,10 +147,38 @@
               <div class="section-label">График</div>
               <h3>Динамика курсов</h3>
             </div>
-            <span class="muted">Текущее значение и предыдущее обновление</span>
+            <span class="muted">Выбери одну валюту для отображения</span>
+          </div>
+          <div class="rates-selector" id="rates-selector">
+            {% for r in rates %}
+              <label class="rates-selector__item">
+                <input
+                  type="radio"
+                  name="chart-currency"
+                  value="{{ r.code }}"
+                  {% if r.code == 'USD' %}checked{% endif %}
+                >
+                <span>{{ r.code }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <div class="rates-chart-meta">
+            <div>
+              <div class="rates-chart-meta__value" id="rates-chart-value">0.0000</div>
+              <div class="rates-chart-meta__label" id="rates-chart-caption">Курс к UAH</div>
+            </div>
+            <div style="text-align:right;">
+              <div class="rates-chart-meta__badge" id="rates-chart-trend">Без изменений</div>
+              <div class="rates-chart-meta__hint" id="rates-chart-hint">История копится каждые 60 секунд.</div>
+            </div>
+          </div>
+          <div class="rates-intervals" id="rates-intervals">
+            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1m">1м</button>
+            <button type="button" class="rates-intervals__item" data-range="5m">5м</button>
+            <button type="button" class="rates-intervals__item" data-range="1h">1ч</button>
           </div>
           <div class="rates-chart-card">
-            <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 320" role="img" aria-label="График курсов валют"></svg>
+            <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 360" role="img" aria-label="График курсов валют"></svg>
           </div>
         </article>
       </section>
@@ -159,14 +187,23 @@
   <script>
     (function () {
       const refreshEveryMs = 60000;
-      const chartCurrencyOrder = ["USD", "EUR", "CNY", "JPY", "KRW", "GBP", "PLN", "CZK"];
+      const defaultSelectedCode = "USD";
       const statusEl = document.getElementById("rates-refresh-status");
       const dateTextEl = document.getElementById("rates-date-text");
       const refreshBarEl = document.getElementById("rates-refresh-bar");
       const errorBadgeEl = document.getElementById("rates-error-badge");
       const ratesListEl = document.getElementById("rates-list");
+      const selectorEl = document.getElementById("rates-selector");
       const chartEl = document.getElementById("rates-chart");
+      const chartValueEl = document.getElementById("rates-chart-value");
+      const chartCaptionEl = document.getElementById("rates-chart-caption");
+      const chartTrendEl = document.getElementById("rates-chart-trend");
+      const chartHintEl = document.getElementById("rates-chart-hint");
+      const intervalsEl = document.getElementById("rates-intervals");
+      const historyStorageKey = "felixbank_rates_history_v1";
       let startedAt = Date.now();
+      let currentRates = {% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %};
+      let selectedRange = "1m";
 
       function formatRate(value) {
         return `${Number(value || 0).toFixed(4)} UAH`;
@@ -179,6 +216,41 @@
           .replace(/>/g, "&gt;")
           .replace(/"/g, "&quot;")
           .replace(/'/g, "&#39;");
+      }
+
+      function loadHistory() {
+        try {
+          const raw = window.localStorage.getItem(historyStorageKey);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      function saveHistory(history) {
+        try {
+          window.localStorage.setItem(historyStorageKey, JSON.stringify(history));
+        } catch (error) {
+          // Ignore storage quota issues; chart will continue with in-memory data.
+        }
+      }
+
+      function formatTimeLabel(timestamp) {
+        return new Date(timestamp).toLocaleTimeString("ru-RU", {
+          hour: "2-digit",
+          minute: "2-digit"
+        });
+      }
+
+      function pointsForRange(range) {
+        if (range === "1h") return 60;
+        if (range === "5m") return 5;
+        return 1;
+      }
+
+      function displayPointsForRange(range) {
+        return Math.max(2, pointsForRange(range) + 1);
       }
 
       function renderRatesList(rates) {
@@ -197,88 +269,181 @@
         }).join("");
       }
 
+      function getSelectedCode() {
+        if (!selectorEl) return defaultSelectedCode;
+        const checked = selectorEl.querySelector('input[type="radio"]:checked');
+        if (checked) {
+          return checked.value;
+        }
+        const firstInput = selectorEl.querySelector('input[type="radio"]');
+        if (firstInput) {
+          firstInput.checked = true;
+          return firstInput.value;
+        }
+        return defaultSelectedCode;
+      }
+
+      function renderSelector(rates) {
+        if (!selectorEl) return;
+        const selectedCode = getSelectedCode();
+        selectorEl.innerHTML = rates.map(function (rate) {
+          const checked = selectedCode === rate.code;
+          return `
+            <label class="rates-selector__item">
+              <input type="radio" name="chart-currency" value="${escapeHtml(rate.code)}" ${checked ? "checked" : ""}>
+              <span>${escapeHtml(rate.code)}</span>
+            </label>
+          `;
+        }).join("");
+      }
+
+      function recordHistory(rates) {
+        const history = loadHistory();
+        const timestamp = Date.now();
+        rates.forEach(function (rate) {
+          const code = String(rate.code || "");
+          const point = {
+            ts: timestamp,
+            value: Number(rate.uah_per_1 || 0)
+          };
+          const series = Array.isArray(history[code]) ? history[code] : [];
+          const lastPoint = series[series.length - 1];
+          if (!lastPoint || Math.abs(lastPoint.value - point.value) > 0.000001) {
+            series.push(point);
+          } else {
+            lastPoint.ts = point.ts;
+          }
+          history[code] = series.slice(-60);
+        });
+        saveHistory(history);
+        return history;
+      }
+
       function renderChart(rates) {
         if (!chartEl) return;
-        const preferred = chartCurrencyOrder
-          .map(function (code) {
-            return rates.find(function (rate) { return rate.code === code; });
-          })
-          .filter(Boolean);
-        const selected = (preferred.length ? preferred : rates.slice(0, 6)).slice(0, 6);
-        if (!selected.length) {
+        const selectedCode = getSelectedCode();
+        const selected = rates.find(function (rate) {
+          return rate.code === selectedCode;
+        });
+        if (!selected) {
           chartEl.innerHTML = "";
           return;
         }
-
-        const values = [];
-        selected.forEach(function (rate) {
-          values.push(Number(rate.uah_per_1 || 0));
-          values.push(Number(rate.previous_uah_per_1 || rate.uah_per_1 || 0));
-        });
-        const maxValue = Math.max.apply(null, values);
-        const minValue = Math.min.apply(null, values);
-        const range = Math.max(maxValue - minValue, maxValue * 0.15 || 1);
-        const topPadding = 47;
-        const leftPadding = 36;
-        const bottomPadding = 54;
+        const history = recordHistory(rates);
         const width = 760;
-        const height = 320;
-        const plotWidth = width - leftPadding - 24;
+        const height = 360;
+        const topPadding = 28;
+        const leftPadding = 56;
+        const rightPadding = 28;
+        const bottomPadding = 64;
+        const plotWidth = width - leftPadding - rightPadding;
         const plotHeight = height - topPadding - bottomPadding;
-        const stepX = selected.length > 1 ? plotWidth / (selected.length - 1) : plotWidth / 2;
+        const fullSeries = Array.isArray(history[selected.code]) && history[selected.code].length
+          ? history[selected.code]
+          : [{ ts: Date.now(), value: Number(selected.uah_per_1 || 0) }];
+        const series = fullSeries.slice(-displayPointsForRange(selectedRange));
+        const values = series.map(function (point) { return point.value; });
+        const minValue = Math.min.apply(null, values);
+        const maxValue = Math.max.apply(null, values);
+        const safeRange = Math.max(maxValue - minValue, maxValue * 0.03 || 1);
+
+        function xFor(index, total) {
+          if (total <= 1) return leftPadding + plotWidth / 2;
+          return leftPadding + (plotWidth / (total - 1)) * index;
+        }
 
         function yFor(value) {
-          const normalized = (Number(value) - minValue) / range;
+          const normalized = (value - minValue) / safeRange;
           return topPadding + plotHeight - normalized * plotHeight;
         }
 
-        const previousPoints = selected.map(function (rate, index) {
-          const x = leftPadding + stepX * index;
-          return `${x},${yFor(rate.previous_uah_per_1 || rate.uah_per_1 || 0)}`;
-        }).join(" ");
-
-        const currentPoints = selected.map(function (rate, index) {
-          const x = leftPadding + stepX * index;
-          return `${x},${yFor(rate.uah_per_1 || 0)}`;
-        }).join(" ");
-
-        const labels = selected.map(function (rate, index) {
-          const x = leftPadding + stepX * index;
+        const gridLines = [0, 0.25, 0.5, 0.75, 1].map(function (step) {
+          const y = topPadding + plotHeight * step;
+          const value = (maxValue - safeRange * step).toFixed(4);
           return `
-            <text x="${x}" y="${height - 18}" text-anchor="middle" class="rates-chart__label">${escapeHtml(rate.code)}</text>
-            <line x1="${x}" y1="${topPadding + plotHeight}" x2="${x}" y2="${topPadding + plotHeight + 8}" class="rates-chart__tick" />
+            <line x1="${leftPadding}" y1="${y}" x2="${width - rightPadding}" y2="${y}" class="rates-chart__grid" />
+            <text x="${leftPadding - 8}" y="${y + 4}" text-anchor="end" class="rates-chart__axis-label">${value}</text>
           `;
         }).join("");
 
-        const currentDots = selected.map(function (rate, index) {
-          const x = leftPadding + stepX * index;
-          const y = yFor(rate.uah_per_1 || 0);
+        const timeLabels = series.map(function (point, index, arr) {
+          const x = xFor(index, arr.length);
+          return `<text x="${x}" y="${height - 18}" text-anchor="middle" class="rates-chart__label">${formatTimeLabel(point.ts)}</text>`;
+        }).join("");
+
+        const linePath = series.map(function (point, index) {
+          return `${index === 0 ? "M" : "L"} ${xFor(index, series.length)} ${yFor(point.value)}`;
+        }).join(" ");
+        const fillPath = linePath
+          ? `${linePath} L ${xFor(series.length - 1, series.length)} ${topPadding + plotHeight} L ${xFor(0, series.length)} ${topPadding + plotHeight} Z`
+          : "";
+        const segments = series.slice(1).map(function (point, index) {
+          const previous = series[index];
+          const color = point.value >= previous.value ? "#c084fc" : "#8b5cf6";
           return `
-            <circle cx="${x}" cy="${y}" r="5" class="rates-chart__dot rates-chart__dot--current" />
-            <text x="${x}" y="${y - 12}" text-anchor="middle" class="rates-chart__value">${Number(rate.uah_per_1 || 0).toFixed(2)}</text>
+            <line
+              x1="${xFor(index, series.length)}"
+              y1="${yFor(previous.value)}"
+              x2="${xFor(index + 1, series.length)}"
+              y2="${yFor(point.value)}"
+              class="rates-chart__line-segment"
+              style="stroke:${color};"
+            />
           `;
         }).join("");
 
-        const previousDots = selected.map(function (rate, index) {
-          const x = leftPadding + stepX * index;
-          const y = yFor(rate.previous_uah_per_1 || rate.uah_per_1 || 0);
-          return `<circle cx="${x}" cy="${y}" r="4" class="rates-chart__dot rates-chart__dot--previous" />`;
-        }).join("");
+        const latest = series[series.length - 1];
+        const previous = series.length > 1 ? series[series.length - 2] : latest;
+        const latestX = xFor(series.length - 1, series.length);
+        const latestY = yFor(latest.value);
+        const trendUp = latest.value >= previous.value;
+        const trendDelta = latest.value - previous.value;
+        if (chartValueEl) {
+          chartValueEl.textContent = latest.value.toFixed(4);
+        }
+        if (chartCaptionEl) {
+          chartCaptionEl.textContent = `${selected.code} к UAH, интервал ${selectedRange}`;
+        }
+        if (chartTrendEl) {
+          chartTrendEl.textContent = series.length <= 1
+            ? "Ожидание истории"
+            : `${trendUp ? "Рост" : "Падение"} ${trendUp ? "↑" : "↓"}`;
+          chartTrendEl.className = `rates-chart-meta__badge ${trendUp ? "rates-chart-meta__badge--up" : "rates-chart-meta__badge--down"}`;
+        }
+        if (chartHintEl) {
+          const neededPoints = displayPointsForRange(selectedRange);
+          chartHintEl.textContent = series.length < neededPoints
+            ? `История ещё накапливается: ${series.length}/${neededPoints} точек. API обновляется раз в 60 секунд.`
+            : `Изменение: ${trendDelta >= 0 ? "+" : ""}${trendDelta.toFixed(4)}. Данные симулируются обновлением раз в 60 секунд.`;
+        }
 
         chartEl.innerHTML = `
-          <line x1="${leftPadding}" y1="${topPadding + plotHeight}" x2="${width - 20}" y2="${topPadding + plotHeight}" class="rates-chart__axis" />
-          <polyline points="${previousPoints}" class="rates-chart__line rates-chart__line--previous" />
-          <polyline points="${currentPoints}" class="rates-chart__line rates-chart__line--current" />
-          ${previousDots}
-          ${currentDots}
-          ${labels}
-          <text x="${leftPadding}" y="18" class="rates-chart__legend">Пунктир: предыдущее значение | Сплошная линия: текущий курс</text>
+          <defs>
+            <linearGradient id="ratesAreaGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(192, 132, 252, 0.34)" />
+              <stop offset="100%" stop-color="rgba(192, 132, 252, 0.02)" />
+            </linearGradient>
+          </defs>
+          ${gridLines}
+          ${fillPath ? `<path d="${fillPath}" class="rates-chart__area" />` : ""}
+          <line x1="${leftPadding}" y1="${topPadding + plotHeight}" x2="${width - rightPadding}" y2="${topPadding + plotHeight}" class="rates-chart__axis" />
+          ${segments}
+          ${series.map(function (point, index) {
+            const prev = index > 0 ? series[index - 1] : point;
+            const pointColor = point.value >= prev.value ? "#4cd47a" : "#ff6b7f";
+            return `<circle cx="${xFor(index, series.length)}" cy="${yFor(point.value)}" r="${index === series.length - 1 ? 7 : 4.5}" class="rates-chart__point${index === series.length - 1 ? " rates-chart__point--active" : ""}" style="fill:${pointColor};" />`;
+          }).join("")}
+          <line x1="${latestX}" y1="${topPadding}" x2="${latestX}" y2="${topPadding + plotHeight}" class="rates-chart__cursor" />
+          <text x="${Math.max(leftPadding + 16, latestX - 70)}" y="${Math.max(topPadding + 26, latestY - 18)}" class="rates-chart__tooltip-value">${latest.value.toFixed(4)}</text>
+          ${timeLabels}
         `;
       }
 
       function applyPayload(data) {
         const rates = Array.isArray(data.rates) ? data.rates : [];
+        currentRates = rates;
         renderRatesList(rates);
+        renderSelector(rates);
         renderChart(rates);
 
         if (dateTextEl) {
@@ -329,7 +494,28 @@
         }
       }
 
-      renderChart({% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %});
+      if (selectorEl) {
+        selectorEl.addEventListener("change", function (event) {
+          const input = event.target;
+          if (!input || input.type !== "radio") return;
+          renderChart(currentRates);
+        });
+      }
+
+      if (intervalsEl) {
+        intervalsEl.addEventListener("click", function (event) {
+          const button = event.target.closest("[data-range]");
+          if (!button) return;
+          selectedRange = button.getAttribute("data-range") || "1m";
+          intervalsEl.querySelectorAll("[data-range]").forEach(function (item) {
+            item.classList.toggle("rates-intervals__item--active", item === button);
+          });
+          renderChart(currentRates);
+        });
+      }
+
+      renderSelector(currentRates);
+      renderChart(currentRates);
       updateCountdown();
       window.setInterval(updateCountdown, 1000);
       window.setInterval(refreshRates, refreshEveryMs);
