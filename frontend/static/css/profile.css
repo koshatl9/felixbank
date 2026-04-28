@@ -776,8 +776,10 @@ body {
 }
 
 .rates-chart__label {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 600;
+    letter-spacing: 0.02em;
+    opacity: 0.92;
 }
 
 .rates-chart__value {
@@ -793,6 +795,10 @@ body {
     font-size: 12px;
     font-weight: 800;
     fill: #f7f1ff;
+}
+
+.rates-chart__label--muted {
+    opacity: 0.74;
 }
 
 @keyframes rates-chart-rise {

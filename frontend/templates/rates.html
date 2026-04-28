@@ -173,9 +173,7 @@
             </div>
           </div>
           <div class="rates-intervals" id="rates-intervals">
-            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1m">1м</button>
-            <button type="button" class="rates-intervals__item" data-range="5m">5м</button>
-            <button type="button" class="rates-intervals__item" data-range="1h">1ч</button>
+            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1h">1ч</button>
           </div>
           <div class="rates-chart-card">
             <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 360" role="img" aria-label="График курсов валют"></svg>
@@ -200,10 +198,9 @@
       const chartTrendEl = document.getElementById("rates-chart-trend");
       const chartHintEl = document.getElementById("rates-chart-hint");
       const intervalsEl = document.getElementById("rates-intervals");
-      const historyStorageKey = "felixbank_rates_history_v1";
       let startedAt = Date.now();
       let currentRates = {% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %};
-      let selectedRange = "1m";
+      let selectedRange = "1h";
 
       function formatRate(value) {
         return `${Number(value || 0).toFixed(4)} UAH`;
@@ -218,22 +215,14 @@
           .replace(/'/g, "&#39;");
       }
 
-      function loadHistory() {
-        try {
-          const raw = window.localStorage.getItem(historyStorageKey);
-          const parsed = raw ? JSON.parse(raw) : {};
-          return parsed && typeof parsed === "object" ? parsed : {};
-        } catch (error) {
-          return {};
-        }
-      }
-
-      function saveHistory(history) {
-        try {
-          window.localStorage.setItem(historyStorageKey, JSON.stringify(history));
-        } catch (error) {
-          // Ignore storage quota issues; chart will continue with in-memory data.
-        }
+      async function fetchHistory(code, range) {
+        const url = new URL("{{ url_for('rates_history') }}", window.location.origin);
+        url.searchParams.set("code", code);
+        url.searchParams.set("range", range);
+        const response = await fetch(url.toString(), { cache: "no-store" });
+        if (!response.ok) throw new Error("history fetch failed");
+        const data = await response.json();
+        return Array.isArray(data.points) ? data.points : [];
       }
 
       function formatTimeLabel(timestamp) {
@@ -241,6 +230,12 @@
           hour: "2-digit",
           minute: "2-digit"
         });
+      }
+
+      function rangeLabel(range) {
+        if (range === "1h") return "1ч";
+        if (range === "5m") return "5м";
+        return "1м";
       }
 
       function pointsForRange(range) {
@@ -251,6 +246,72 @@
 
       function displayPointsForRange(range) {
         return Math.max(2, pointsForRange(range) + 1);
+      }
+
+      function minimumDisplayPoints(range) {
+        if (range === "1h") return 8;
+        if (range === "5m") return 5;
+        return 4;
+      }
+
+      function rangeDurationMs(range) {
+        if (range === "1h") return 60 * 60 * 1000;
+        if (range === "5m") return 5 * 60 * 1000;
+        return 60 * 1000;
+      }
+
+      function normalizeSeries(points, range, fallbackValue) {
+        const normalized = [];
+        points
+          .map(function (point) {
+            return {
+              ts: Number(point.ts) || Date.now(),
+              value: Number(point.value || fallbackValue || 0)
+            };
+          })
+          .sort(function (left, right) {
+            return left.ts - right.ts;
+          })
+          .forEach(function (point) {
+            const lastPoint = normalized[normalized.length - 1];
+            if (lastPoint && lastPoint.ts === point.ts) {
+              lastPoint.value = point.value;
+              return;
+            }
+            normalized.push(point);
+          });
+
+        if (!normalized.length) {
+          normalized.push({ ts: Date.now(), value: Number(fallbackValue || 0) });
+        }
+
+        const minimumPoints = minimumDisplayPoints(range);
+        const stepMs = Math.max(1000, Math.round(rangeDurationMs(range) / Math.max(minimumPoints - 1, 1)));
+        while (normalized.length < minimumPoints) {
+          const firstPoint = normalized[0];
+          normalized.unshift({
+            ts: firstPoint.ts - stepMs,
+            value: firstPoint.value
+          });
+        }
+
+        return normalized.slice(-Math.max(displayPointsForRange(range), minimumPoints));
+      }
+
+      function labelIndicesForRange(total, range) {
+        if (total <= 1) {
+          return new Set([0]);
+        }
+        const maxLabels = range === "1h" ? 6 : 4;
+        if (total <= maxLabels) {
+          return new Set(Array.from({ length: total }, function (_, index) { return index; }));
+        }
+        const step = Math.max(1, Math.ceil((total - 1) / (maxLabels - 1)));
+        const indices = new Set([0, total - 1]);
+        for (let index = step; index < total - 1; index += step) {
+          indices.add(index);
+        }
+        return indices;
       }
 
       function renderRatesList(rates) {
@@ -297,29 +358,7 @@
         }).join("");
       }
 
-      function recordHistory(rates) {
-        const history = loadHistory();
-        const timestamp = Date.now();
-        rates.forEach(function (rate) {
-          const code = String(rate.code || "");
-          const point = {
-            ts: timestamp,
-            value: Number(rate.uah_per_1 || 0)
-          };
-          const series = Array.isArray(history[code]) ? history[code] : [];
-          const lastPoint = series[series.length - 1];
-          if (!lastPoint || Math.abs(lastPoint.value - point.value) > 0.000001) {
-            series.push(point);
-          } else {
-            lastPoint.ts = point.ts;
-          }
-          history[code] = series.slice(-60);
-        });
-        saveHistory(history);
-        return history;
-      }
-
-      function renderChart(rates) {
+      async function renderChart(rates) {
         if (!chartEl) return;
         const selectedCode = getSelectedCode();
         const selected = rates.find(function (rate) {
@@ -329,7 +368,12 @@
           chartEl.innerHTML = "";
           return;
         }
-        const history = recordHistory(rates);
+        let fullSeries = [];
+        try {
+          fullSeries = await fetchHistory(selected.code, selectedRange);
+        } catch (error) {
+          fullSeries = [];
+        }
         const width = 760;
         const height = 360;
         const topPadding = 28;
@@ -338,10 +382,10 @@
         const bottomPadding = 64;
         const plotWidth = width - leftPadding - rightPadding;
         const plotHeight = height - topPadding - bottomPadding;
-        const fullSeries = Array.isArray(history[selected.code]) && history[selected.code].length
-          ? history[selected.code]
-          : [{ ts: Date.now(), value: Number(selected.uah_per_1 || 0) }];
-        const series = fullSeries.slice(-displayPointsForRange(selectedRange));
+        if (!fullSeries.length) {
+          fullSeries = [{ ts: Date.now(), value: Number(selected.uah_per_1 || 0) }];
+        }
+        const series = normalizeSeries(fullSeries, selectedRange, Number(selected.uah_per_1 || 0));
         const values = series.map(function (point) { return point.value; });
         const minValue = Math.min.apply(null, values);
         const maxValue = Math.max.apply(null, values);
@@ -366,9 +410,14 @@
           `;
         }).join("");
 
+        const labelIndices = labelIndicesForRange(series.length, selectedRange);
         const timeLabels = series.map(function (point, index, arr) {
+          if (!labelIndices.has(index)) {
+            return "";
+          }
           const x = xFor(index, arr.length);
-          return `<text x="${x}" y="${height - 18}" text-anchor="middle" class="rates-chart__label">${formatTimeLabel(point.ts)}</text>`;
+          const labelClass = index === arr.length - 1 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
+          return `<text x="${x}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatTimeLabel(point.ts)}</text>`;
         }).join("");
 
         const linePath = series.map(function (point, index) {
@@ -402,7 +451,7 @@
           chartValueEl.textContent = latest.value.toFixed(4);
         }
         if (chartCaptionEl) {
-          chartCaptionEl.textContent = `${selected.code} к UAH, интервал ${selectedRange}`;
+          chartCaptionEl.textContent = `${selected.code} к UAH, интервал ${rangeLabel(selectedRange)}`;
         }
         if (chartTrendEl) {
           chartTrendEl.textContent = series.length <= 1
@@ -411,10 +460,10 @@
           chartTrendEl.className = `rates-chart-meta__badge ${trendUp ? "rates-chart-meta__badge--up" : "rates-chart-meta__badge--down"}`;
         }
         if (chartHintEl) {
-          const neededPoints = displayPointsForRange(selectedRange);
-          chartHintEl.textContent = series.length < neededPoints
-            ? `История ещё накапливается: ${series.length}/${neededPoints} точек. API обновляется раз в 60 секунд.`
-            : `Изменение: ${trendDelta >= 0 ? "+" : ""}${trendDelta.toFixed(4)}. Данные симулируются обновлением раз в 60 секунд.`;
+          const enoughPoints = fullSeries.length >= minimumDisplayPoints(selectedRange);
+          chartHintEl.textContent = !enoughPoints
+            ? "Показываем последние доступные точки. История ещё заполняется, обновление идёт раз в 60 секунд."
+            : `Изменение: ${trendDelta >= 0 ? "+" : ""}${trendDelta.toFixed(4)}. Real-time симулируется обновлением раз в 60 секунд.`;
         }
 
         chartEl.innerHTML = `
@@ -506,7 +555,7 @@
         intervalsEl.addEventListener("click", function (event) {
           const button = event.target.closest("[data-range]");
           if (!button) return;
-          selectedRange = button.getAttribute("data-range") || "1m";
+          selectedRange = button.getAttribute("data-range") || "1h";
           intervalsEl.querySelectorAll("[data-range]").forEach(function (item) {
             item.classList.toggle("rates-intervals__item--active", item === button);
           });
