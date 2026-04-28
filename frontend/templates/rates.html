@@ -79,7 +79,7 @@
       <div class="support-card">
         <div class="support-card__label">Источник</div>
         <h2>Укроина</h2>
-        <p>Курсы пересчитаны в UAH. Ответ кешируется на 2 минуты в сессии.</p>
+        <p>Курсы пересчитаны в UAH. Данные обновляются каждые 60 секунд.</p>
         <button type="button" onclick="location.reload()">Обновить</button>
       </div>
     </aside>
@@ -89,13 +89,24 @@
         <div>
           <div class="hero__eyebrow">Курсы валют</div>
           <h2>На текущее время</h2>
-          <p class="hero__text">
+          <p class="hero__text" id="rates-date-text">
             {% if payload.ok and payload.date %}
               Дата обновления: <strong>{{ payload.date }}</strong>
             {% else %}
               Показаны резервные демо-курсы, источник временно недоступен.
             {% endif %}
           </p>
+          <p class="hero__text" id="rates-refresh-status">Следующее обновление через 60 сек.</p>
+          <div class="refresh-meter" aria-hidden="true">
+            <div class="refresh-meter__bar" id="rates-refresh-bar"></div>
+          </div>
+          <div class="refresh-scale" id="rates-refresh-scale">
+            <span>0с</span>
+            <span>15с</span>
+            <span>30с</span>
+            <span>45с</span>
+            <span>60с</span>
+          </div>
         </div>
       </section>
 
@@ -106,14 +117,16 @@
               <div class="section-label">Список</div>
               <h3>Все валюты к UAH</h3>
             </div>
-            {% if not payload.ok and payload.error %}
-              <span class="status-badge" style="background: rgba(255, 159, 199, 0.14); color: var(--danger);">
-                {{ payload.error }}
-              </span>
-            {% endif %}
+            <span
+              class="status-badge"
+              id="rates-error-badge"
+              style="background: rgba(255, 159, 199, 0.14); color: var(--danger); {% if payload.ok or not payload.error %}display:none;{% endif %}"
+            >
+              {{ payload.error }}
+            </span>
           </div>
 
-          <div class="transaction-list">
+          <div class="transaction-list" id="rates-list">
             {% set rates = payload.rates if payload.ok and payload.rates else fallback %}
             {% for r in rates %}
               <div class="transaction-item">
@@ -127,8 +140,200 @@
             {% endfor %}
           </div>
         </article>
+
+        <article class="panel limits-card">
+          <div class="panel-heading">
+            <div>
+              <div class="section-label">График</div>
+              <h3>Динамика курсов</h3>
+            </div>
+            <span class="muted">Текущее значение и предыдущее обновление</span>
+          </div>
+          <div class="rates-chart-card">
+            <svg id="rates-chart" class="rates-chart" viewBox="0 0 760 320" role="img" aria-label="График курсов валют"></svg>
+          </div>
+        </article>
       </section>
     </main>
   </div>
+  <script>
+    (function () {
+      const refreshEveryMs = 60000;
+      const chartCurrencyOrder = ["USD", "EUR", "CNY", "JPY", "KRW", "GBP", "PLN", "CZK"];
+      const statusEl = document.getElementById("rates-refresh-status");
+      const dateTextEl = document.getElementById("rates-date-text");
+      const refreshBarEl = document.getElementById("rates-refresh-bar");
+      const errorBadgeEl = document.getElementById("rates-error-badge");
+      const ratesListEl = document.getElementById("rates-list");
+      const chartEl = document.getElementById("rates-chart");
+      let startedAt = Date.now();
+
+      function formatRate(value) {
+        return `${Number(value || 0).toFixed(4)} UAH`;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function renderRatesList(rates) {
+        if (!ratesListEl) return;
+        ratesListEl.innerHTML = rates.map(function (rate) {
+          return `
+            <div class="transaction-item">
+              <div class="transaction-item__icon">₴</div>
+              <div style="min-width:0;">
+                <strong>${escapeHtml(rate.code)}</strong>
+                <p>${escapeHtml(rate.name)}</p>
+              </div>
+              <div class="amount amount--positive">${formatRate(rate.uah_per_1)}</div>
+            </div>
+          `;
+        }).join("");
+      }
+
+      function renderChart(rates) {
+        if (!chartEl) return;
+        const preferred = chartCurrencyOrder
+          .map(function (code) {
+            return rates.find(function (rate) { return rate.code === code; });
+          })
+          .filter(Boolean);
+        const selected = (preferred.length ? preferred : rates.slice(0, 6)).slice(0, 6);
+        if (!selected.length) {
+          chartEl.innerHTML = "";
+          return;
+        }
+
+        const values = [];
+        selected.forEach(function (rate) {
+          values.push(Number(rate.uah_per_1 || 0));
+          values.push(Number(rate.previous_uah_per_1 || rate.uah_per_1 || 0));
+        });
+        const maxValue = Math.max.apply(null, values);
+        const minValue = Math.min.apply(null, values);
+        const range = Math.max(maxValue - minValue, maxValue * 0.15 || 1);
+        const topPadding = 47;
+        const leftPadding = 36;
+        const bottomPadding = 54;
+        const width = 760;
+        const height = 320;
+        const plotWidth = width - leftPadding - 24;
+        const plotHeight = height - topPadding - bottomPadding;
+        const stepX = selected.length > 1 ? plotWidth / (selected.length - 1) : plotWidth / 2;
+
+        function yFor(value) {
+          const normalized = (Number(value) - minValue) / range;
+          return topPadding + plotHeight - normalized * plotHeight;
+        }
+
+        const previousPoints = selected.map(function (rate, index) {
+          const x = leftPadding + stepX * index;
+          return `${x},${yFor(rate.previous_uah_per_1 || rate.uah_per_1 || 0)}`;
+        }).join(" ");
+
+        const currentPoints = selected.map(function (rate, index) {
+          const x = leftPadding + stepX * index;
+          return `${x},${yFor(rate.uah_per_1 || 0)}`;
+        }).join(" ");
+
+        const labels = selected.map(function (rate, index) {
+          const x = leftPadding + stepX * index;
+          return `
+            <text x="${x}" y="${height - 18}" text-anchor="middle" class="rates-chart__label">${escapeHtml(rate.code)}</text>
+            <line x1="${x}" y1="${topPadding + plotHeight}" x2="${x}" y2="${topPadding + plotHeight + 8}" class="rates-chart__tick" />
+          `;
+        }).join("");
+
+        const currentDots = selected.map(function (rate, index) {
+          const x = leftPadding + stepX * index;
+          const y = yFor(rate.uah_per_1 || 0);
+          return `
+            <circle cx="${x}" cy="${y}" r="5" class="rates-chart__dot rates-chart__dot--current" />
+            <text x="${x}" y="${y - 12}" text-anchor="middle" class="rates-chart__value">${Number(rate.uah_per_1 || 0).toFixed(2)}</text>
+          `;
+        }).join("");
+
+        const previousDots = selected.map(function (rate, index) {
+          const x = leftPadding + stepX * index;
+          const y = yFor(rate.previous_uah_per_1 || rate.uah_per_1 || 0);
+          return `<circle cx="${x}" cy="${y}" r="4" class="rates-chart__dot rates-chart__dot--previous" />`;
+        }).join("");
+
+        chartEl.innerHTML = `
+          <line x1="${leftPadding}" y1="${topPadding + plotHeight}" x2="${width - 20}" y2="${topPadding + plotHeight}" class="rates-chart__axis" />
+          <polyline points="${previousPoints}" class="rates-chart__line rates-chart__line--previous" />
+          <polyline points="${currentPoints}" class="rates-chart__line rates-chart__line--current" />
+          ${previousDots}
+          ${currentDots}
+          ${labels}
+          <text x="${leftPadding}" y="18" class="rates-chart__legend">Пунктир: предыдущее значение | Сплошная линия: текущий курс</text>
+        `;
+      }
+
+      function applyPayload(data) {
+        const rates = Array.isArray(data.rates) ? data.rates : [];
+        renderRatesList(rates);
+        renderChart(rates);
+
+        if (dateTextEl) {
+          dateTextEl.innerHTML = data.ok && data.date
+            ? `Дата обновления: <strong>${escapeHtml(data.date)}</strong>`
+            : "Показаны резервные демо-курсы, источник временно недоступен.";
+        }
+
+        if (errorBadgeEl) {
+          if (!data.ok && data.error) {
+            errorBadgeEl.textContent = data.error;
+            errorBadgeEl.style.display = "inline-flex";
+          } else {
+            errorBadgeEl.style.display = "none";
+          }
+        }
+      }
+
+      async function refreshRates() {
+        try {
+          const response = await fetch("{{ url_for('rates_data') }}", {
+            headers: { "X-Requested-With": "fetch" },
+            cache: "no-store"
+          });
+          if (!response.ok) {
+            throw new Error("bad response");
+          }
+          const data = await response.json();
+          applyPayload(data);
+          startedAt = Date.now();
+          updateCountdown();
+        } catch (error) {
+          if (statusEl) {
+            statusEl.textContent = "Не удалось обновить курсы, повтор через 60 сек.";
+          }
+          startedAt = Date.now();
+        }
+      }
+
+      function updateCountdown() {
+        if (!statusEl) return;
+        const elapsed = Date.now() - startedAt;
+        const remainingSeconds = Math.max(0, Math.ceil((refreshEveryMs - elapsed) / 1000));
+        statusEl.textContent = `Следующее обновление через ${remainingSeconds} сек.`;
+        if (refreshBarEl) {
+          const progress = Math.min(100, (elapsed / refreshEveryMs) * 100);
+          refreshBarEl.style.width = `${progress}%`;
+        }
+      }
+
+      renderChart({% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %});
+      updateCountdown();
+      window.setInterval(updateCountdown, 1000);
+      window.setInterval(refreshRates, refreshEveryMs);
+    })();
+  </script>
 </body>
 </html>

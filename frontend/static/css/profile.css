@@ -255,6 +255,35 @@ body {
     line-height: 1.7;
 }
 
+.refresh-meter {
+    width: min(100%, 620px);
+    height: 14px;
+    margin-top: 18px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.refresh-meter__bar {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, var(--accent), #d8b3ff);
+    box-shadow: 0 0 24px rgba(181, 108, 255, 0.35);
+    transition: width 1s linear;
+}
+
+.refresh-scale {
+    width: min(100%, 620px);
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 8px;
+    color: var(--text-soft);
+    font-size: 12px;
+}
+
 .hero__actions {
     display: flex;
     align-items: center;
@@ -565,6 +594,73 @@ body {
 
 .amount--negative {
     color: var(--danger);
+}
+
+.rates-chart-card {
+    padding: 8px 0 0;
+}
+
+.rates-chart {
+    width: 100%;
+    height: auto;
+    display: block;
+    overflow: visible;
+}
+
+.rates-chart__axis,
+.rates-chart__tick {
+    stroke: rgba(255, 255, 255, 0.2);
+    stroke-width: 1.5;
+}
+
+.rates-chart__line {
+    fill: none;
+    stroke-width: 4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.rates-chart__line--current {
+    stroke: #7ef7b8;
+}
+
+.rates-chart__line--previous {
+    stroke: rgba(255, 159, 199, 0.95);
+    stroke-dasharray: 10 8;
+}
+
+.rates-chart__dot {
+    stroke: rgba(18, 6, 31, 0.9);
+    stroke-width: 2;
+}
+
+.rates-chart__dot--current {
+    fill: #7ef7b8;
+}
+
+.rates-chart__dot--previous {
+    fill: #ff9fc7;
+}
+
+.rates-chart__label,
+.rates-chart__legend,
+.rates-chart__value {
+    fill: var(--text-soft);
+    font-family: "Manrope", sans-serif;
+}
+
+.rates-chart__label {
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.rates-chart__legend {
+    font-size: 13px;
+}
+
+.rates-chart__value {
+    font-size: 12px;
+    font-weight: 700;
 }
 
 .limit-row+.limit-row {
