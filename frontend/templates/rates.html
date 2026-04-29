@@ -162,6 +162,27 @@
               </label>
             {% endfor %}
           </div>
+          <div class="rates-date-range">
+            <label class="rates-date-field">
+              <span>С</span>
+              <input
+                type="date"
+                id="rates-start-date"
+                value="{{ chart_default_start_date }}"
+                max="{{ chart_default_end_date }}"
+              >
+            </label>
+            <label class="rates-date-field">
+              <span>По</span>
+              <input
+                type="date"
+                id="rates-end-date"
+                value="{{ chart_default_end_date }}"
+                max="{{ chart_default_end_date }}"
+              >
+            </label>
+            <button type="button" class="rates-date-action rates-date-action--primary" id="rates-apply-range">Показать</button>
+          </div>
           <div class="rates-chart-meta">
             <div>
               <div class="rates-chart-meta__value" id="rates-chart-value">0</div>
@@ -173,7 +194,7 @@
             </div>
           </div>
           <div class="rates-intervals" id="rates-intervals">
-            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1y">1г</button>
+            <button type="button" class="rates-intervals__item rates-intervals__item--active" data-range="1y">За год</button>
           </div>
           <div class="rates-chart-card">
             <div class="rates-chart-toolbar">
@@ -225,6 +246,11 @@
       const chartSourceEl = document.getElementById("rates-chart-source");
       const chartSampleSizeEl = document.getElementById("rates-chart-sample-size");
       const historyTableBodyEl = document.getElementById("rates-history-table-body");
+      const rangeStartInputEl = document.getElementById("rates-start-date");
+      const rangeEndInputEl = document.getElementById("rates-end-date");
+      const applyRangeButtonEl = document.getElementById("rates-apply-range");
+      const defaultStartDate = "{{ chart_default_start_date }}";
+      const defaultEndDate = "{{ chart_default_end_date }}";
       let startedAt = Date.now();
       let currentRates = {% if payload.ok and payload.rates %}{{ payload.rates|tojson }}{% else %}{{ fallback|tojson }}{% endif %};
       let selectedRange = "1y";
@@ -253,17 +279,60 @@
           .replace(/'/g, "&#39;");
       }
 
+      function normalizeDateRange(startValue, endValue) {
+        let startDate = String(startValue || "").trim();
+        let endDate = String(endValue || "").trim();
+        if (!startDate || !endDate) {
+          return {
+            startDate: defaultStartDate,
+            endDate: defaultEndDate,
+          };
+        }
+        if (startDate > endDate) {
+          const temp = startDate;
+          startDate = endDate;
+          endDate = temp;
+        }
+        return { startDate, endDate };
+      }
+
+      function getActiveDateRange() {
+        return normalizeDateRange(
+          rangeStartInputEl ? rangeStartInputEl.value : defaultStartDate,
+          rangeEndInputEl ? rangeEndInputEl.value : defaultEndDate
+        );
+      }
+
+      function applyDateRangeInputs(startDate, endDate) {
+        if (rangeStartInputEl) {
+          rangeStartInputEl.value = startDate;
+        }
+        if (rangeEndInputEl) {
+          rangeEndInputEl.value = endDate;
+        }
+      }
+
+      function formatDateValueLabel(value) {
+        if (!value) return "нет даты";
+        const parts = String(value).split("-");
+        if (parts.length !== 3) return value;
+        return `${parts[2]}.${parts[1]}.${parts[0]}`;
+      }
+
       async function fetchHistory(code, range) {
         const url = new URL("{{ url_for('rates_history') }}", window.location.origin);
         url.searchParams.set("code", code);
         url.searchParams.set("range", range);
+        const activeRange = getActiveDateRange();
+        url.searchParams.set("start_date", activeRange.startDate);
+        url.searchParams.set("end_date", activeRange.endDate);
         const response = await fetch(url.toString(), { cache: "no-store" });
         if (!response.ok) throw new Error("history fetch failed");
         return response.json();
       }
 
       function formatTimeLabel(timestamp, range) {
-        if (range === "1y") {
+        if (range === "1y" || range === "custom") {
           return new Date(timestamp).toLocaleDateString("ru-RU", {
             month: "2-digit",
             year: "2-digit"
@@ -287,7 +356,7 @@
       }
 
       function formatAxisLabel(timestamp, range, spanMs) {
-        if (range === "1y") {
+        if (range === "1y" || range === "custom") {
           if (spanMs >= 90 * 24 * 60 * 60 * 1000) {
             return new Date(timestamp).toLocaleDateString("ru-RU", {
               month: "2-digit",
@@ -331,6 +400,7 @@
 
       function rangeLabel(range) {
         if (range === "1y") return "1г";
+        if (range === "custom") return "по датам";
         if (range === "1h") return "1ч";
         if (range === "5m") return "5м";
         return "1м";
@@ -338,6 +408,7 @@
 
       function pointsForRange(range) {
         if (range === "1y") return 365;
+        if (range === "custom") return 366;
         if (range === "1h") return 60;
         if (range === "5m") return 5;
         return 1;
@@ -349,6 +420,7 @@
 
       function minimumDisplayPoints(range) {
         if (range === "1y") return 2;
+        if (range === "custom") return 2;
         if (range === "1h") return 8;
         if (range === "5m") return 5;
         return 4;
@@ -356,6 +428,7 @@
 
       function rangeDurationMs(range) {
         if (range === "1y") return 365 * 24 * 60 * 60 * 1000;
+        if (range === "custom") return 365 * 24 * 60 * 60 * 1000;
         if (range === "1h") return 60 * 60 * 1000;
         if (range === "5m") return 5 * 60 * 1000;
         return 60 * 1000;
@@ -387,7 +460,7 @@
         }
 
         const minimumPoints = minimumDisplayPoints(range);
-        if (range !== "1y") {
+        if (range !== "1y" && range !== "custom") {
           const stepMs = Math.max(1000, Math.round(rangeDurationMs(range) / Math.max(minimumPoints - 1, 1)));
           while (normalized.length < minimumPoints) {
             const firstPoint = normalized[0];
@@ -405,7 +478,7 @@
         if (total <= 1) {
           return new Set([0]);
         }
-        if (range === "1y") {
+        if (range === "1y" || range === "custom") {
           return new Set();
         }
         const maxLabels = range === "1h" ? 6 : 4;
@@ -529,6 +602,11 @@
         }
         let fullSeries = historyPayload && Array.isArray(historyPayload.points) ? historyPayload.points : [];
         const recentRows = historyPayload && Array.isArray(historyPayload.rows) ? historyPayload.rows : [];
+        const requestedStartDate = historyPayload && historyPayload.start_date ? historyPayload.start_date : defaultStartDate;
+        const requestedEndDate = historyPayload && historyPayload.end_date ? historyPayload.end_date : defaultEndDate;
+        const requestedRangeLabel = `${formatDateValueLabel(requestedStartDate)} - ${formatDateValueLabel(requestedEndDate)}`;
+        const requestedStartMs = Date.parse(`${requestedStartDate}T00:00:00`);
+        const requestedEndMs = Date.parse(`${requestedEndDate}T23:59:59`);
         const width = 760;
         const height = 360;
         const topPadding = 28;
@@ -537,8 +615,41 @@
         const bottomPadding = 64;
         const plotWidth = width - leftPadding - rightPadding;
         const plotHeight = height - topPadding - bottomPadding;
+        if (Number.isFinite(requestedStartMs) && Number.isFinite(requestedEndMs)) {
+          fullSeries = fullSeries.filter(function (point) {
+            const pointTs = Number(point.ts) || 0;
+            return pointTs >= requestedStartMs && pointTs <= requestedEndMs;
+          });
+        }
         if (!fullSeries.length) {
-          fullSeries = [{ ts: Date.now(), value: Number(selected.uah_per_1 || 0) }];
+          if (chartValueEl) {
+            chartValueEl.textContent = "0";
+          }
+          if (chartCaptionEl) {
+            chartCaptionEl.textContent = `${selected.code} к UAH, интервал ${rangeLabel(selectedRange)}`;
+          }
+          if (chartTrendEl) {
+            chartTrendEl.textContent = "Нет данных";
+            chartTrendEl.className = "rates-chart-meta__badge";
+          }
+          if (chartHintEl) {
+            chartHintEl.textContent = `В MySQL нет точек за диапазон ${requestedRangeLabel}.`;
+          }
+          if (chartSourceEl) {
+            const sourceTable = historyPayload && historyPayload.source_table ? historyPayload.source_table : "currency_rates_history";
+            chartSourceEl.textContent = `Источник графика: MySQL · ${sourceTable}`;
+          }
+          if (chartSampleSizeEl) {
+            chartSampleSizeEl.textContent = `Точки: 0 · диапазон: ${requestedRangeLabel}`;
+          }
+          renderHistoryTable(selected.code, recentRows);
+          chartEl.innerHTML = `
+            <text x="${width / 2}" y="${height / 2}" text-anchor="middle" class="rates-chart__tooltip-value">
+              Нет данных за выбранный диапазон
+            </text>
+          `;
+          hideTooltip();
+          return;
         }
         const series = normalizeSeries(fullSeries, selectedRange, Number(selected.uah_per_1 || 0));
         const values = series.map(function (point) { return point.value; });
@@ -570,23 +681,7 @@
           `;
         }).join("");
 
-        const timeLabels = selectedRange === "1y"
-          ? Array.from({ length: 7 }, function (_, index) {
-              const ratio = index / 6;
-              const labelTs = earliestTs + timeSpan * ratio;
-              const labelClass = index === 6 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
-              return `<text x="${xFor(labelTs)}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatAxisLabel(labelTs, selectedRange, timeSpan)}</text>`;
-            }).join("")
-          : (function () {
-              const labelIndices = labelIndicesForRange(series.length, selectedRange);
-              return series.map(function (point, index, arr) {
-                if (!labelIndices.has(index)) {
-                  return "";
-                }
-                const labelClass = index === arr.length - 1 ? "rates-chart__label" : "rates-chart__label rates-chart__label--muted";
-                return `<text x="${xFor(point.ts)}" y="${height - 18}" text-anchor="middle" class="${labelClass}">${formatAxisLabel(point.ts, selectedRange, timeSpan)}</text>`;
-              }).join("");
-            })();
+        const timeLabels = "";
 
         const linePath = series.map(function (point, index) {
           return `${index === 0 ? "M" : "L"} ${xFor(point.ts)} ${yFor(point.value)}`;
@@ -630,15 +725,15 @@
         if (chartHintEl) {
           const enoughPoints = fullSeries.length >= minimumDisplayPoints(selectedRange);
           chartHintEl.textContent = !enoughPoints
-            ? `Показываем весь доступный период из MySQL: ${coverageLabel}. Режим кнопки — до 1 года.`
-            : `Период данных: ${coverageLabel}. Изменение: ${trendDelta >= 0 ? "+" : ""}${formatCompactNumber(trendDelta)}.`;
+            ? `Запрошенный диапазон: ${requestedRangeLabel}. Показываем все доступные точки из MySQL: ${coverageLabel}.`
+            : `Запрошенный диапазон: ${requestedRangeLabel}. Период данных: ${coverageLabel}. Изменение: ${trendDelta >= 0 ? "+" : ""}${formatCompactNumber(trendDelta)}.`;
         }
         if (chartSourceEl) {
           const sourceTable = historyPayload && historyPayload.source_table ? historyPayload.source_table : "currency_rates_history";
           chartSourceEl.textContent = `Источник графика: MySQL · ${sourceTable}`;
         }
         if (chartSampleSizeEl) {
-          chartSampleSizeEl.textContent = `Точки: ${series.length} · период: ${coverageLabel}`;
+          chartSampleSizeEl.textContent = `Точки: ${series.length} · диапазон: ${requestedRangeLabel}`;
         }
         renderHistoryTable(selected.code, recentRows);
 
@@ -772,10 +867,37 @@
           const button = event.target.closest("[data-range]");
           if (!button) return;
           selectedRange = button.getAttribute("data-range") || "1y";
+          applyDateRangeInputs(defaultStartDate, defaultEndDate);
           intervalsEl.querySelectorAll("[data-range]").forEach(function (item) {
             item.classList.toggle("rates-intervals__item--active", item === button);
           });
           renderChart(currentRates);
+        });
+      }
+
+      if (applyRangeButtonEl) {
+        applyRangeButtonEl.addEventListener("click", function () {
+          const normalizedRange = getActiveDateRange();
+          applyDateRangeInputs(normalizedRange.startDate, normalizedRange.endDate);
+          selectedRange = "custom";
+          if (intervalsEl) {
+            intervalsEl.querySelectorAll("[data-range]").forEach(function (item) {
+              item.classList.remove("rates-intervals__item--active");
+            });
+          }
+          renderChart(currentRates);
+        });
+      }
+
+      if (rangeStartInputEl) {
+        rangeStartInputEl.addEventListener("change", function () {
+          selectedRange = "custom";
+        });
+      }
+
+      if (rangeEndInputEl) {
+        rangeEndInputEl.addEventListener("change", function () {
+          selectedRange = "custom";
         });
       }
 
