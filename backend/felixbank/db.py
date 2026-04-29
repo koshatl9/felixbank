@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -418,6 +418,115 @@ def get_recent_rates_rows(currency_code: str, limit: int = 8) -> list[dict[str, 
                 LIMIT %s
                 """,
                 (code, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+
+    return rows
+
+
+def get_rates_history_between_dates(
+    currency_code: str,
+    start_date: date,
+    end_date: date,
+    limit: int,
+    aggregate_by_day: bool = False,
+) -> list[dict[str, Any]]:
+    code = (currency_code or "").strip().upper()[:3]
+    if not code:
+        return []
+
+    start_dt = datetime.combine(start_date, time.min)
+    end_dt = datetime.combine(end_date + timedelta(days=1), time.min)
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            if aggregate_by_day:
+                cursor.execute(
+                    """
+                    SELECT
+                        UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                        uah_per_1 AS value
+                    FROM currency_rates_history
+                    WHERE id IN (
+                        SELECT max_ids.id
+                        FROM (
+                            SELECT MAX(id) AS id
+                            FROM currency_rates_history
+                            WHERE currency_code = %s
+                              AND created_at >= %s
+                              AND created_at < %s
+                            GROUP BY DATE(created_at)
+                            ORDER BY DATE(created_at) DESC
+                            LIMIT %s
+                        ) AS max_ids
+                    )
+                    ORDER BY created_at ASC, id ASC
+                    """,
+                    (code, start_dt, end_dt, int(limit)),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT
+                        UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                        uah_per_1 AS value
+                    FROM currency_rates_history
+                    WHERE currency_code = %s
+                      AND created_at >= %s
+                      AND created_at < %s
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT %s
+                    """,
+                    (code, start_dt, end_dt, int(limit)),
+                )
+            rows = cursor.fetchall()
+
+            if len(rows) < 2 and aggregate_by_day:
+                cursor.execute(
+                    """
+                    SELECT
+                        UNIX_TIMESTAMP(created_at) * 1000 AS ts,
+                        uah_per_1 AS value
+                    FROM currency_rates_history
+                    WHERE currency_code = %s
+                      AND created_at >= %s
+                      AND created_at < %s
+                    ORDER BY created_at ASC, id ASC
+                    LIMIT %s
+                    """,
+                    (code, start_dt, end_dt, min(int(limit), 1000)),
+                )
+                rows = cursor.fetchall()
+
+    return [{"ts": int(row["ts"]), "value": float(row["value"])} for row in rows]
+
+
+def get_recent_rates_rows_in_range(
+    currency_code: str,
+    start_date: date,
+    end_date: date,
+    limit: int = 8,
+) -> list[dict[str, Any]]:
+    code = (currency_code or "").strip().upper()[:3]
+    if not code:
+        return []
+
+    start_dt = datetime.combine(start_date, time.min)
+    end_dt = datetime.combine(end_date + timedelta(days=1), time.min)
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT currency_code, uah_per_1, created_at
+                FROM currency_rates_history
+                WHERE currency_code = %s
+                  AND created_at >= %s
+                  AND created_at < %s
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (code, start_dt, end_dt, max(1, int(limit))),
             )
             rows = cursor.fetchall()
 

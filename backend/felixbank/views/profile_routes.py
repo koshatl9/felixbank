@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from decimal import Decimal, ROUND_HALF_UP
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -14,7 +14,9 @@ from ..db import (
     get_all_user_logins,
     get_balances,
     get_recent_rates_rows,
+    get_recent_rates_rows_in_range,
     get_rates_history,
+    get_rates_history_between_dates,
     get_user_profile,
     get_virtual_card_blocked,
     insert_rates_history,
@@ -50,6 +52,29 @@ def _store_rates_history_safely(rates: list[dict[str, object]]) -> None:
     except Exception:
         # История не должна ломать страницу курсов.
         pass
+
+
+def _default_chart_dates() -> tuple[date, date]:
+    end_date = date.today()
+    start_date = end_date - timedelta(days=364)
+    return start_date, end_date
+
+
+def _parse_requested_chart_dates() -> tuple[date, date] | None:
+    start_raw = str(request.args.get("start_date") or "").strip()
+    end_raw = str(request.args.get("end_date") or "").strip()
+    if not start_raw or not end_raw:
+        return None
+
+    try:
+        start_date = datetime.strptime(start_raw, "%Y-%m-%d").date()
+        end_date = datetime.strptime(end_raw, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+
+    if start_date > end_date:
+        start_date, end_date = end_date, start_date
+    return start_date, end_date
 
 
 def register_profile_routes(app: Flask) -> None:
@@ -182,12 +207,15 @@ def register_profile_routes(app: Flask) -> None:
         user_profile = get_user_profile(int(user["id"]))
         payload = rates_payload()
         fallback = _fallback_rates()
+        chart_start_date, chart_end_date = _default_chart_dates()
         _store_rates_history_safely(_rates_for_chart_and_storage(payload))
         return render_template(
             "rates.html",
             login=user["login"],
             payload=payload,
             fallback=fallback,
+            chart_default_start_date=chart_start_date.isoformat(),
+            chart_default_end_date=chart_end_date.isoformat(),
             profile_data=user_profile,
             avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
         )
@@ -211,22 +239,45 @@ def register_profile_routes(app: Flask) -> None:
     @login_required
     def rates_history():
         code = str(request.args.get("code") or "USD").upper()[:3]
+        requested_dates = _parse_requested_chart_dates()
         range_raw = str(request.args.get("range") or "1y").lower().strip()
-        seconds_map = {"1h": 3600, "1y": 365 * 24 * 3600}
-        since_seconds = seconds_map.get(range_raw, 365 * 24 * 3600)
-        aggregate_by_day = range_raw == "1y"
-        limit = 366 if aggregate_by_day else max(2, min(120, since_seconds // 60 + 2))
         try:
-            points = get_rates_history(
-                code,
-                since_seconds=since_seconds,
-                limit=limit,
-                aggregate_by_day=aggregate_by_day,
-            )
-            recent_rows = get_recent_rates_rows(code, limit=8)
+            if requested_dates is not None:
+                start_date, end_date = requested_dates
+                requested_days = max(1, (end_date - start_date).days + 1)
+                aggregate_by_day = requested_days > 45
+                limit = 366 if aggregate_by_day else 1500
+                points = get_rates_history_between_dates(
+                    code,
+                    start_date=start_date,
+                    end_date=end_date,
+                    limit=limit,
+                    aggregate_by_day=aggregate_by_day,
+                )
+                recent_rows = get_recent_rates_rows_in_range(code, start_date, end_date, limit=8)
+                source_mode = "date_range"
+            else:
+                range_raw = str(request.args.get("range") or "1y").lower().strip()
+                seconds_map = {"1h": 3600, "1y": 365 * 24 * 3600}
+                since_seconds = seconds_map.get(range_raw, 365 * 24 * 3600)
+                aggregate_by_day = range_raw == "1y"
+                limit = 366 if aggregate_by_day else max(2, min(120, since_seconds // 60 + 2))
+                points = get_rates_history(
+                    code,
+                    since_seconds=since_seconds,
+                    limit=limit,
+                    aggregate_by_day=aggregate_by_day,
+                )
+                recent_rows = get_recent_rates_rows(code, limit=8)
+                source_mode = "predefined_range"
         except Exception:
             points = []
             recent_rows = []
+            if requested_dates is not None:
+                start_date, end_date = requested_dates
+            else:
+                start_date, end_date = _default_chart_dates()
+            source_mode = "date_range" if requested_dates is not None else "predefined_range"
 
         def format_recent_row(row: dict[str, object]) -> dict[str, object]:
             created_at = row.get("created_at")
@@ -243,6 +294,9 @@ def register_profile_routes(app: Flask) -> None:
                 "created_at_label": created_at_label,
             }
 
+        if requested_dates is None:
+            start_date, end_date = _default_chart_dates()
+
         return jsonify(
             {
                 "ok": True,
@@ -251,6 +305,9 @@ def register_profile_routes(app: Flask) -> None:
                 "points": points,
                 "rows": [format_recent_row(row) for row in recent_rows],
                 "source_table": "currency_rates_history",
+                "source_mode": source_mode,
+                "start_date": start_date.isoformat(),
+                "end_date": end_date.isoformat(),
             }
         )
 
