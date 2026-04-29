@@ -253,6 +253,37 @@ def get_all_user_logins(exclude_user_id: int | None = None) -> list[str]:
     return [str(row["login"]) for row in rows]
 
 
+def normalize_virtual_card_number(raw_value: str) -> str:
+    digits = "".join(char for char in str(raw_value or "") if char.isdigit())
+    if len(digits) != 16:
+        return ""
+    return f"{digits[0:4]} {digits[4:8]} {digits[8:12]} {digits[12:16]}"
+
+
+def get_user_by_virtual_card_number(card_number: str) -> dict[str, Any] | None:
+    normalized_number = normalize_virtual_card_number(card_number)
+    if not normalized_number:
+        return None
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    users.id,
+                    users.login,
+                    virtual_cards.card_number,
+                    virtual_cards.is_blocked
+                FROM virtual_cards
+                JOIN users ON users.id = virtual_cards.user_id
+                WHERE virtual_cards.card_number = %s
+                LIMIT %s
+                """,
+                (normalized_number, 1),
+            )
+            return cursor.fetchone()
+
+
 def get_user_profile(user_id: int) -> dict[str, Any]:
     with get_db() as connection:
         with connection.cursor() as cursor:

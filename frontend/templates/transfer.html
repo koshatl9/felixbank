@@ -86,8 +86,8 @@
       <section class="hero">
         <div>
           <div class="hero__eyebrow">Перевод на карту</div>
-          <h2>Между пользователями FelixBank</h2>
-          <p class="hero__text">Введите логин получателя и сумму. Перевод выполняется сразу после подтверждения.</p>
+          <h2>По номеру виртуальной карты</h2>
+          <p class="hero__text">Введите номер виртуальной карты получателя и сумму. Перевод выполняется сразу после подтверждения.</p>
         </div>
       </section>
 
@@ -115,18 +115,19 @@
 
           <form method="post" action="" style="display: grid; gap: 12px;">
             <div style="display: grid; gap: 8px;">
-              <label class="muted" style="font-size: 13px;">Логин получателя</label>
-              <select name="recipient_login" required>
-                <option value="" selected disabled>Выберите пользователя</option>
-                {% for user_login in users %}
-                <option value="{{ user_login }}">{{ user_login }}</option>
-                {% endfor %}
-              </select>
+              <label class="muted" style="font-size: 13px;">Номер виртуальной карты</label>
+              <input
+                name="recipient_card_number"
+                inputmode="numeric"
+                placeholder="5412 1234 5678 9012"
+                value="{{ request.form.get('recipient_card_number', '') }}"
+                required
+              >
             </div>
 
             <div style="display: grid; gap: 8px;">
               <label class="muted" style="font-size: 13px;">Сумма (UAH)</label>
-              <input name="amount" inputmode="decimal" placeholder="0.00" required>
+              <input name="amount" inputmode="decimal" placeholder="0.00" value="{{ request.form.get('amount', '') }}" required>
             </div>
 
             <button class="primary-btn" type="submit">Отправить перевод</button>
@@ -151,19 +152,11 @@
             </div>
           </div>
           <div style="margin-top: 16px;">
-            <div class="section-label">Пользователи на сайте</div>
-            {% if users %}
-            <div class="user-list">
-              {% for user_login in users %}
-              <div class="user-list__item">
-                <span>👤</span>
-                <strong>{{ user_login }}</strong>
-              </div>
-              {% endfor %}
-            </div>
-            {% else %}
-            <p class="muted">Пока нет других пользователей для перевода.</p>
-            {% endif %}
+            <div class="section-label">Подсказка</div>
+            <p class="muted" style="line-height: 1.7;">
+              Введите номер карты в формате <strong>5412 1234 5678 9012</strong>.
+              Перевод возможен только на существующую виртуальную карту FelixBank.
+            </p>
           </div>
         </article>
 
