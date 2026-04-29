@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import date, datetime, time, timedelta, timezone
 from decimal import Decimal
+from secrets import randbelow
 from typing import Any
 
 import pymysql
@@ -21,7 +22,36 @@ def ensure_schema() -> None:
         with connection.cursor() as cursor:
             for statement in SCHEMA_STATEMENTS:
                 cursor.execute(statement)
+            _ensure_virtual_card_columns(cursor)
         connection.commit()
+
+
+def _column_exists(cursor, table_name: str, column_name: str) -> bool:
+    cursor.execute(
+        """
+        SELECT COUNT(*) AS column_count
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+          AND table_name = %s
+          AND column_name = %s
+        """,
+        (table_name, column_name),
+    )
+    row = cursor.fetchone()
+    return bool(row and int(row.get("column_count") or 0))
+
+
+def _ensure_virtual_card_columns(cursor) -> None:
+    column_definitions = (
+        ("card_number", "CHAR(19) NULL AFTER user_id"),
+        ("expiry_month", "TINYINT UNSIGNED NULL AFTER card_number"),
+        ("expiry_year", "SMALLINT UNSIGNED NULL AFTER expiry_month"),
+        ("cvv", "CHAR(3) NULL AFTER expiry_year"),
+    )
+    for column_name, definition in column_definitions:
+        if _column_exists(cursor, "virtual_cards", column_name):
+            continue
+        cursor.execute(f"ALTER TABLE virtual_cards ADD COLUMN {column_name} {definition}")
 
 
 def seed_balances(cursor, user_id: int) -> None:
@@ -265,6 +295,118 @@ def get_virtual_card_blocked(user_id: int) -> bool:
     if row is None:
         return False
     return bool(row.get("is_blocked"))
+
+
+def _luhn_check_digit(number_without_check: str) -> str:
+    digits = [int(char) for char in number_without_check]
+    checksum = 0
+    parity = (len(digits) + 1) % 2
+    for index, digit in enumerate(digits):
+        if index % 2 == parity:
+            digit *= 2
+            if digit > 9:
+                digit -= 9
+        checksum += digit
+    return str((10 - (checksum % 10)) % 10)
+
+
+def _generate_unique_virtual_card_number(cursor) -> str:
+    while True:
+        prefix = "5412"
+        body = "".join(str(randbelow(10)) for _ in range(11))
+        raw_number = prefix + body
+        check_digit = _luhn_check_digit(raw_number)
+        digits = raw_number + check_digit
+        formatted_number = f"{digits[0:4]} {digits[4:8]} {digits[8:12]} {digits[12:16]}"
+        cursor.execute(
+            """
+            SELECT user_id
+            FROM virtual_cards
+            WHERE card_number = %s
+            LIMIT 1
+            """,
+            (formatted_number,),
+        )
+        if cursor.fetchone() is None:
+            return formatted_number
+
+
+def get_or_create_virtual_card(user_id: int, login_value: str) -> dict[str, Any]:
+    holder = login_value.upper()[:24]
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT card_number, expiry_month, expiry_year, cvv, is_blocked
+                FROM virtual_cards
+                WHERE user_id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+            if (
+                row is not None
+                and row.get("card_number")
+                and row.get("expiry_month") is not None
+                and row.get("expiry_year") is not None
+                and row.get("cvv")
+            ):
+                expiry_month = int(row["expiry_month"])
+                expiry_year = int(row["expiry_year"])
+                return {
+                    "number": str(row["card_number"]),
+                    "expiry": f"{expiry_month:02d}/{expiry_year % 100:02d}",
+                    "cvv": str(row["cvv"]),
+                    "holder": holder,
+                    "blocked": bool(row.get("is_blocked")),
+                }
+
+            card_number = _generate_unique_virtual_card_number(cursor)
+            expiry_month = randbelow(12) + 1
+            expiry_year = datetime.now(tz=timezone.utc).year + 3 + randbelow(4)
+            cvv = f"{randbelow(1000):03d}"
+
+            if row is None:
+                cursor.execute(
+                    """
+                    INSERT INTO virtual_cards (
+                        user_id,
+                        card_number,
+                        expiry_month,
+                        expiry_year,
+                        cvv,
+                        is_blocked
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    (user_id, card_number, expiry_month, expiry_year, cvv, 0),
+                )
+                blocked = False
+            else:
+                blocked = bool(row.get("is_blocked"))
+                cursor.execute(
+                    """
+                    UPDATE virtual_cards
+                    SET card_number = %s,
+                        expiry_month = %s,
+                        expiry_year = %s,
+                        cvv = %s
+                    WHERE user_id = %s
+                    """,
+                    (card_number, expiry_month, expiry_year, cvv, user_id),
+                )
+        connection.commit()
+
+    return {
+        "number": card_number,
+        "expiry": f"{expiry_month:02d}/{expiry_year % 100:02d}",
+        "cvv": cvv,
+        "holder": holder,
+        "blocked": blocked,
+    }
 
 
 def set_virtual_card_blocked(user_id: int, is_blocked: bool) -> None:

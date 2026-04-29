@@ -22,3 +22,16 @@ CREATE TABLE IF NOT EXISTS currency_rates_history (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_rates_history_code_time (currency_code, created_at)
 );
+
+CREATE TABLE IF NOT EXISTS virtual_cards (
+    user_id INT NOT NULL PRIMARY KEY,
+    card_number CHAR(19) NULL,
+    expiry_month TINYINT UNSIGNED NULL,
+    expiry_year SMALLINT UNSIGNED NULL,
+    cvv CHAR(3) NULL,
+    is_blocked TINYINT(1) NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_virtual_cards_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+);

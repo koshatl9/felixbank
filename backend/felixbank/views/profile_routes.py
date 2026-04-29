@@ -17,8 +17,8 @@ from ..db import (
     get_recent_rates_rows_in_range,
     get_rates_history,
     get_rates_history_between_dates,
+    get_or_create_virtual_card,
     get_user_profile,
-    get_virtual_card_blocked,
     insert_rates_history,
     save_user_profile,
     set_virtual_card_blocked,
@@ -26,7 +26,7 @@ from ..db import (
 )
 from ..rates import rates_payload
 from ..utils import decimal_input, decimal_to_str
-from .common import ALLOWED_AVATAR_EXT, RATES_UAH_PER_1, avatar_url_for, build_virtual_card
+from .common import ALLOWED_AVATAR_EXT, RATES_UAH_PER_1, avatar_url_for
 
 
 def _fallback_rates() -> list[dict[str, object]]:
@@ -316,8 +316,8 @@ def register_profile_routes(app: Flask) -> None:
     def virtual_card():
         user = current_user()
         assert user is not None
-        card = build_virtual_card(str(user["login"]))
-        card_blocked = get_virtual_card_blocked(int(user["id"]))
+        card = get_or_create_virtual_card(int(user["id"]), str(user["login"]))
+        card_blocked = bool(card.get("blocked"))
         user_profile = get_user_profile(int(user["id"]))
         return render_template(
             "virtual_card.html",
