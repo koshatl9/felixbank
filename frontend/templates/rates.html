@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Курсы валют</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -80,7 +81,7 @@
         <div class="support-card__label">Источник</div>
         <h2>Украина</h2>
         <p>Курсы пересчитаны в UAH. Данные обновляются каждые 60 секунд.</p>
-        <button type="button" onclick="location.reload()">Обновить</button>
+        <button type="button" id="rates-manual-refresh">Обновить</button>
       </div>
     </aside>
 
@@ -107,6 +108,10 @@
             <span>45с</span>
             <span>60с</span>
           </div>
+        </div>
+        <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
         </div>
       </section>
 
@@ -249,6 +254,7 @@
       const rangeStartInputEl = document.getElementById("rates-start-date");
       const rangeEndInputEl = document.getElementById("rates-end-date");
       const applyRangeButtonEl = document.getElementById("rates-apply-range");
+      const manualRefreshButtonEl = document.getElementById("rates-manual-refresh");
       const defaultStartDate = "{{ chart_default_start_date }}";
       const defaultEndDate = "{{ chart_default_end_date }}";
       let startedAt = Date.now();
@@ -822,9 +828,15 @@
         }
       }
 
-      async function refreshRates() {
+      async function refreshRates(options) {
+        const settings = options || {};
         try {
-          const response = await fetch("{{ url_for('rates_data') }}", {
+          const url = new URL("{{ url_for('rates_data') }}", window.location.origin);
+          if (settings.notify) {
+            url.searchParams.set("notify", "1");
+            url.searchParams.set("code", getSelectedCode());
+          }
+          const response = await fetch(url.toString(), {
             headers: { "X-Requested-With": "fetch" },
             cache: "no-store"
           });
@@ -833,6 +845,9 @@
           }
           const data = await response.json();
           applyPayload(data);
+          if (settings.notify && window.FelixNotifications && typeof window.FelixNotifications.refresh === "function") {
+            window.FelixNotifications.refresh();
+          }
           startedAt = Date.now();
           updateCountdown();
         } catch (error) {
@@ -886,6 +901,12 @@
             });
           }
           renderChart(currentRates);
+        });
+      }
+
+      if (manualRefreshButtonEl) {
+        manualRefreshButtonEl.addEventListener("click", function () {
+          refreshRates({ notify: true });
         });
       }
 

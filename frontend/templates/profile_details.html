@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Профиль пользователя</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -80,7 +81,10 @@
           <h2>Профиль пользователя</h2>
           <p class="hero__text">Заполните информацию о себе. Аватар будет отображаться в блоке "Добро пожаловать" на главной странице.</p>
         </div>
-        <img class="hero-avatar" src="{{ avatar_url }}" alt="Текущий аватар">
+        <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Текущий аватар">
+        </div>
       </section>
 
       {% with messages = get_flashed_messages(with_categories=true) %}

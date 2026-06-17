@@ -1,0 +1,40 @@
+<div class="notifications" data-notifications-root data-notifications-url="{{ url_for('notifications_feed') }}">
+  <button
+    type="button"
+    class="ghost-btn notification-bell"
+    id="notification-bell"
+    aria-expanded="false"
+    aria-haspopup="dialog"
+    title="Уведомления"
+  >
+    <i>🔔</i>
+    <span
+      class="notification-badge"
+      id="notification-badge"
+      {% if not header_notifications_count %}hidden{% endif %}
+    >
+      {{ header_notifications_count if header_notifications_count < 10 else '9+' }}
+    </span>
+  </button>
+
+  <div class="notification-panel" id="notification-panel" hidden>
+    <div class="notification-panel__title">🔔 Уведомления</div>
+    <div class="notification-list" id="notification-list">
+      {% if header_notifications %}
+        {% for notification in header_notifications %}
+          <div class="notification-item notification-item--{{ notification.kind or 'info' }}">
+            <span class="notification-item__icon">✔</span>
+            <div>
+              <strong>{{ notification.title }}</strong>
+              <span>
+                {{ notification.created_at.strftime('%d.%m %H:%M') if notification.created_at else '' }}
+              </span>
+            </div>
+          </div>
+        {% endfor %}
+      {% else %}
+        <div class="notification-empty">Пока уведомлений нет.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>

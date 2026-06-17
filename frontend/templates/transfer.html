@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Перевод на карту</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
   <script src="{{ url_for('serve_static_file', filename='js/transfer.js') }}" defer></script>
 </head>
 
@@ -89,6 +90,10 @@
           <div class="hero__eyebrow">Перевод на карту</div>
           <h2>По номеру виртуальной карты</h2>
           <p class="hero__text">Введите номер виртуальной карты получателя и сумму. Перевод выполняется сразу после подтверждения.</p>
+        </div>
+        <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
         </div>
       </section>
 
