@@ -14,6 +14,7 @@ from ..config import (
     TRANSFER_PIN_RE,
 )
 from ..db import (
+    create_notification,
     get_all_user_logins,
     get_balances,
     get_sender_daily_transfer_total,
@@ -23,7 +24,7 @@ from ..db import (
     normalize_virtual_card_number,
     transfer_balance,
 )
-from ..utils import decimal_input, decimal_to_str
+from ..utils import decimal_input, decimal_to_compact_str, decimal_to_str
 from .common import avatar_url_for
 
 
@@ -83,6 +84,16 @@ def register_transfer_routes(app: Flask) -> None:
                             recipient_id=int(recipient["id"]),
                             amount=amount,
                             currency_code="UAH",
+                        )
+                        create_notification(
+                            user_id,
+                            f"Перевод {decimal_to_compact_str(amount)} UAH выполнен",
+                            kind="success",
+                        )
+                        create_notification(
+                            int(recipient["id"]),
+                            f"Получен перевод +{decimal_to_compact_str(amount)} UAH",
+                            kind="success",
                         )
                         masked_card_number = f"**** **** **** {normalized_card_number[-4:]}"
                         flash(
@@ -150,6 +161,16 @@ def register_transfer_routes(app: Flask) -> None:
                             recipient_id=int(recipient["id"]),
                             amount=amount,
                             currency_code=currency_code,
+                        )
+                        create_notification(
+                            user_id,
+                            f"Перевод {decimal_to_compact_str(amount)} {currency_code} выполнен",
+                            kind="success",
+                        )
+                        create_notification(
+                            int(recipient["id"]),
+                            f"Получен перевод +{decimal_to_compact_str(amount)} {currency_code}",
+                            kind="success",
                         )
                         flash(
                             f"Международный перевод выполнен: {decimal_to_str(amount)} "

@@ -12,6 +12,13 @@ def decimal_to_str(value: Decimal | float | int) -> str:
     return format(value.quantize(TWOPLACES, rounding=ROUND_HALF_UP), "f")
 
 
+def decimal_to_compact_str(value: Decimal | float | int) -> str:
+    normalized = decimal_to_str(value)
+    if "." not in normalized:
+        return normalized
+    return normalized.rstrip("0").rstrip(".")
+
+
 def decimal_input(raw: str) -> Decimal | None:
     try:
         value = Decimal(raw.replace(",", ".").strip())

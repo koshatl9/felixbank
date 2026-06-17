@@ -275,6 +275,42 @@ def get_sender_daily_transfer_total(sender_id: int, currency_code: str = "UAH") 
     return Decimal(str((row or {}).get("total_amount") or "0"))
 
 
+def create_notification(user_id: int, title: str, kind: str = "info") -> None:
+    normalized_title = str(title or "").strip()
+    normalized_kind = str(kind or "info").strip().lower()[:16] or "info"
+    if not normalized_title:
+        return
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO notifications (user_id, title, kind)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, normalized_title[:255], normalized_kind),
+            )
+        connection.commit()
+
+
+def get_recent_notifications(user_id: int, limit: int = 8) -> list[dict[str, Any]]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, title, kind, created_at
+                FROM notifications
+                WHERE user_id = %s
+                ORDER BY created_at DESC, id DESC
+                LIMIT %s
+                """,
+                (user_id, max(1, int(limit))),
+            )
+            rows = cursor.fetchall()
+
+    return rows
+
+
 def get_all_user_logins(exclude_user_id: int | None = None) -> list[str]:
     with get_db() as connection:
         with connection.cursor() as cursor:

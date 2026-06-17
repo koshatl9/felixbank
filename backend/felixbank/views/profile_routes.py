@@ -11,8 +11,10 @@ from werkzeug.utils import secure_filename
 from ..auth import current_user, login_required
 from ..config import TWOPLACES
 from ..db import (
+    create_notification,
     get_all_user_logins,
     get_balances,
+    get_recent_notifications,
     get_recent_rates_rows,
     get_recent_rates_rows_in_range,
     get_rates_history,
@@ -223,9 +225,19 @@ def register_profile_routes(app: Flask) -> None:
     @app.get("/profile/rates/data")
     @login_required
     def rates_data():
+        user = current_user()
+        assert user is not None
         payload = rates_payload()
         rates = _rates_for_chart_and_storage(payload)
         _store_rates_history_safely(rates)
+        notify_requested = str(request.args.get("notify") or "").strip().lower() in {"1", "true", "yes", "on"}
+        notify_code = str(request.args.get("code") or "USD").strip().upper()[:3]
+        if notify_requested and notify_code:
+            create_notification(
+                int(user["id"]),
+                f"Курс {notify_code} обновлен",
+                kind="info",
+            )
         return jsonify(
             {
                 "ok": bool(payload.get("ok")),
@@ -337,4 +349,37 @@ def register_profile_routes(app: Flask) -> None:
         payload = request.get_json(silent=True) or {}
         blocked = bool(payload.get("blocked"))
         set_virtual_card_blocked(int(user["id"]), blocked)
+        if blocked:
+            create_notification(
+                int(user["id"]),
+                "Карта успешно заблокирована",
+                kind="warning",
+            )
         return jsonify({"ok": True, "blocked": blocked})
+
+    @app.get("/profile/notifications")
+    @login_required
+    def notifications_feed():
+        user = current_user()
+        assert user is not None
+        notifications = get_recent_notifications(int(user["id"]), limit=8)
+
+        def serialize(row: dict[str, object]) -> dict[str, object]:
+            created_at = row.get("created_at")
+            if isinstance(created_at, datetime):
+                created_at_label = created_at.strftime("%d.%m %H:%M")
+            else:
+                created_at_label = str(created_at or "")
+            return {
+                "id": int(row.get("id") or 0),
+                "title": str(row.get("title") or ""),
+                "kind": str(row.get("kind") or "info"),
+                "created_at_label": created_at_label,
+            }
+
+        return jsonify(
+            {
+                "ok": True,
+                "notifications": [serialize(row) for row in notifications],
+            }
+        )

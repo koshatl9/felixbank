@@ -5,8 +5,9 @@ import os
 
 from flask import Flask, request
 
+from .auth import current_user
 from .config import FRONTEND_DIR, env_bool
-from .db import init_storage
+from .db import get_recent_notifications, init_storage
 from .routes import register_routes
 from .utils import money_filter
 
@@ -29,6 +30,21 @@ def create_app() -> Flask:
     def log_response(response):
         app.logger.info("%s %s -> %s", request.method, request.full_path.rstrip("?"), response.status_code)
         return response
+
+    @app.context_processor
+    def inject_header_notifications():
+        user = current_user()
+        if user is None:
+            return {
+                "header_notifications": [],
+                "header_notifications_count": 0,
+            }
+
+        notifications = get_recent_notifications(int(user["id"]), limit=8)
+        return {
+            "header_notifications": notifications,
+            "header_notifications_count": len(notifications),
+        }
 
     with app.app_context():
         init_storage()
