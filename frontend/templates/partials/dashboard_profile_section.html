@@ -29,6 +29,12 @@
       </div>
 
       <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Email для 2FA</label>
+        <input name="email" type="email" value="{{ profile_data.email or '' }}" placeholder="name@example.com">
+        <div class="muted" style="font-size: 12px;">На этот адрес будет приходить код подтверждения входа.</div>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
         <label class="muted" style="font-size: 13px;">Возраст</label>
         <input name="age" type="number" min="1" max="120" value="{{ profile_data.age if profile_data.age is not none else '' }}" placeholder="Например: 24">
       </div>
