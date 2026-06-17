@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 import pymysql
 from flask import Flask, flash, redirect, render_template, request, url_for
 
-from ..auth import current_user, get_user_by_login, login_required
+from ..auth import current_user, get_user_by_login, login_required, verify_transfer_pin
+from ..config import DEFAULT_TRANSFER_PIN, TRANSFER_PIN_RE
 from ..db import (
     get_all_user_logins,
     get_balances,
@@ -23,18 +26,33 @@ def register_transfer_routes(app: Flask) -> None:
     def transfer():
         user = current_user()
         assert user is not None
+        balances = get_balances(user["id"])
 
         if request.method == "POST":
             recipient_card_number_raw = (request.form.get("recipient_card_number") or "").strip()
+            recipient_card_digits = "".join(char for char in recipient_card_number_raw if char.isdigit())
             normalized_card_number = normalize_virtual_card_number(recipient_card_number_raw)
             amount = decimal_input(request.form.get("amount") or "")
+            transfer_confirmed = (request.form.get("transfer_confirmed") or "").strip() == "1"
+            transfer_pin = (request.form.get("transfer_pin") or "").strip()
+            available_uah = balances.get("UAH", Decimal("0"))
 
             if not recipient_card_number_raw:
                 flash("Введите номер виртуальной карты получателя.", "error")
+            elif len(recipient_card_digits) != 16:
+                flash("Номер карты должен содержать 16 цифр.", "error")
             elif not normalized_card_number:
                 flash("Введите номер карты в формате 5412 1234 5678 9012.", "error")
             elif amount is None or amount <= 0:
                 flash("Введите корректную сумму больше нуля.", "error")
+            elif amount > available_uah:
+                flash("Недостаточно средств для перевода.", "error")
+            elif not transfer_confirmed:
+                flash("Подтвердите перевод в окне подтверждения.", "error")
+            elif not TRANSFER_PIN_RE.fullmatch(transfer_pin):
+                flash("Введите 4-значный PIN для подтверждения перевода.", "error")
+            elif not verify_transfer_pin(int(user["id"]), transfer_pin):
+                flash("Неверный PIN-код подтверждения.", "error")
             else:
                 recipient = get_user_by_virtual_card_number(normalized_card_number)
                 if recipient is None:
@@ -51,8 +69,9 @@ def register_transfer_routes(app: Flask) -> None:
                             amount=amount,
                             currency_code="UAH",
                         )
+                        masked_card_number = f"**** **** **** {normalized_card_number[-4:]}"
                         flash(
-                            f"Перевод выполнен: {decimal_to_str(amount)} UAH на карту {normalized_card_number}.",
+                            f"Перевод выполнен: {decimal_to_str(amount)} UAH на карту {masked_card_number}.",
                             "ok",
                         )
                         return redirect(url_for("transfer"))
@@ -66,7 +85,6 @@ def register_transfer_routes(app: Flask) -> None:
                         )
                         flash("Ошибка базы данных при выполнении перевода.", "error")
 
-        balances = get_balances(user["id"])
         history = get_transfer_history_for_user(int(user["id"]), limit=20)
         user_profile = get_user_profile(int(user["id"]))
         return render_template(
@@ -77,6 +95,7 @@ def register_transfer_routes(app: Flask) -> None:
             user_id=int(user["id"]),
             profile_data=user_profile,
             avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
+            demo_transfer_pin=DEFAULT_TRANSFER_PIN,
         )
 
     @app.route("/profile/transfer/international", methods=["GET", "POST"])

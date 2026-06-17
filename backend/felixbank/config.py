@@ -20,6 +20,7 @@ LEGACY_USERS_PATH = BACKEND_DIR / "data" / "users.json"
 load_dotenv(PROJECT_DIR / ".env", override=True)
 
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
+TRANSFER_PIN_RE = re.compile(r"^\d{4}$")
 TWOPLACES = Decimal("0.01")
 INITIAL_BALANCES = {
     "UAH": Decimal("15000.00"),
@@ -31,6 +32,7 @@ SCHEMA_STATEMENTS = (
         id INT AUTO_INCREMENT PRIMARY KEY,
         login VARCHAR(32) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
+        transfer_pin_hash VARCHAR(255) NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -109,6 +111,9 @@ def env(name: str, default: str = "") -> str:
 def env_bool(name: str, default: bool = False) -> bool:
     raw = env(name, "1" if default else "0").strip().lower()
     return raw in {"1", "true", "yes", "on"}
+
+
+DEFAULT_TRANSFER_PIN = env("DEFAULT_TRANSFER_PIN", "1234")
 
 
 def running_in_docker() -> bool:

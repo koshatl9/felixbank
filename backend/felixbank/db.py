@@ -8,8 +8,16 @@ from typing import Any
 
 import pymysql
 from flask import current_app
+from werkzeug.security import generate_password_hash
 
-from .config import INITIAL_BALANCES, LEGACY_USERS_PATH, LOGIN_RE, SCHEMA_STATEMENTS, db_config
+from .config import (
+    DEFAULT_TRANSFER_PIN,
+    INITIAL_BALANCES,
+    LEGACY_USERS_PATH,
+    LOGIN_RE,
+    SCHEMA_STATEMENTS,
+    db_config,
+)
 from .utils import decimal_to_str
 
 
@@ -22,8 +30,13 @@ def ensure_schema() -> None:
         with connection.cursor() as cursor:
             for statement in SCHEMA_STATEMENTS:
                 cursor.execute(statement)
+            _ensure_user_columns(cursor)
             _ensure_virtual_card_columns(cursor)
         connection.commit()
+
+
+def _default_transfer_pin_hash() -> str:
+    return generate_password_hash(DEFAULT_TRANSFER_PIN)
 
 
 def _column_exists(cursor, table_name: str, column_name: str) -> bool:
@@ -39,6 +52,20 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
     )
     row = cursor.fetchone()
     return bool(row and int(row.get("column_count") or 0))
+
+
+def _ensure_user_columns(cursor) -> None:
+    if not _column_exists(cursor, "users", "transfer_pin_hash"):
+        cursor.execute("ALTER TABLE users ADD COLUMN transfer_pin_hash VARCHAR(255) NULL AFTER password_hash")
+
+    cursor.execute(
+        """
+        UPDATE users
+        SET transfer_pin_hash = %s
+        WHERE transfer_pin_hash IS NULL OR transfer_pin_hash = ''
+        """,
+        (_default_transfer_pin_hash(),),
+    )
 
 
 def _ensure_virtual_card_columns(cursor) -> None:
@@ -93,11 +120,13 @@ def import_legacy_users() -> None:
                     continue
                 cursor.execute(
                     """
-                    INSERT INTO users (login, password_hash)
-                    VALUES (%s, %s)
-                    ON DUPLICATE KEY UPDATE password_hash = users.password_hash
+                    INSERT INTO users (login, password_hash, transfer_pin_hash)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        password_hash = users.password_hash,
+                        transfer_pin_hash = COALESCE(users.transfer_pin_hash, VALUES(transfer_pin_hash))
                     """,
-                    (login_value, password_hash),
+                    (login_value, password_hash, _default_transfer_pin_hash()),
                 )
                 cursor.execute("SELECT id FROM users WHERE login = %s LIMIT 1", (login_value,))
                 user = cursor.fetchone()
