@@ -44,7 +44,7 @@
           <i>💱</i>
           <div>
             <div>Курсы валют</div>
-            <div class="muted" style="font-size: 12px;">На текущее время</div>
+            <div class="muted" style="font-size: 12px;">Актуальные курсы</div>
           </div>
         </a>
         <div class="menu__group">
@@ -52,7 +52,7 @@
             <i>💳</i>
             <div>
               <div>Переводы</div>
-              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+              <div class="muted" style="font-size: 12px;">Карты и переводы</div>
             </div>
           </a>
           <div class="menu__submenu">
@@ -76,9 +76,9 @@
         </a>
       </nav>
 
-      <div class="support-card">
+      <div class="support-card support-card--warning">
         <div class="support-card__label">Источник</div>
-        <h2>Укроина</h2>
+        <h2>Украина</h2>
         <p>Курсы пересчитаны в UAH. Данные обновляются каждые 60 секунд.</p>
         <button type="button" onclick="location.reload()">Обновить</button>
       </div>
@@ -118,9 +118,9 @@
               <h3>Все валюты к UAH</h3>
             </div>
             <span
-              class="status-badge"
+              class="status-badge status-badge--error"
               id="rates-error-badge"
-              style="background: rgba(255, 159, 199, 0.14); color: var(--danger); {% if payload.ok or not payload.error %}display:none;{% endif %}"
+              {% if payload.ok or not payload.error %}hidden{% endif %}
             >
               {{ payload.error }}
             </span>
@@ -815,9 +815,9 @@
         if (errorBadgeEl) {
           if (!data.ok && data.error) {
             errorBadgeEl.textContent = data.error;
-            errorBadgeEl.style.display = "inline-flex";
+            errorBadgeEl.hidden = false;
           } else {
-            errorBadgeEl.style.display = "none";
+            errorBadgeEl.hidden = true;
           }
         }
       }

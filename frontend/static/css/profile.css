@@ -6,16 +6,26 @@
     --panel: rgba(255, 255, 255, 0.08);
     --panel-strong: rgba(255, 255, 255, 0.14);
     --border: rgba(255, 255, 255, 0.12);
-    --text-main: #f7f1ff;
-    --text-soft: #cbb9e9;
+    --border-strong: rgba(255, 255, 255, 0.22);
+    --text-main: #fbf8ff;
+    --text-soft: #e7dcf7;
+    --text-muted: #cbbce3;
+    --text-faint: #ae9ecb;
     --accent: #b56cff;
     --accent-strong: #8d3dff;
     --accent-light: #e5d1ff;
     --icon-bg: linear-gradient(135deg, rgba(181, 108, 255, 0.95), rgba(141, 61, 255, 0.92));
     --icon-ring: rgba(255, 255, 255, 0.16);
     --icon-shadow: 0 14px 30px rgba(116, 45, 212, 0.28);
-    --success: #7ef7b8;
-    --danger: #ff9fc7;
+    --success: #63f2a7;
+    --success-strong: #28c76f;
+    --success-bg: rgba(99, 242, 167, 0.16);
+    --warning: #ffd76f;
+    --warning-strong: #ffb938;
+    --warning-bg: rgba(255, 215, 111, 0.18);
+    --danger: #ff758f;
+    --danger-strong: #ff4d6d;
+    --danger-bg: rgba(255, 117, 143, 0.16);
 }
 
 .mascot-title {
@@ -86,13 +96,29 @@ body {
 }
 
 .brand__caption,
-.section-label,
-.muted,
 .profile-meta span,
 .bank-card span,
 .limit-row__text span,
 .transaction-item p {
     color: var(--text-soft);
+}
+
+.section-label {
+    color: var(--accent-light);
+}
+
+.muted {
+    color: var(--text-muted);
+}
+
+.brand__caption {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+label.muted {
+    color: var(--text-soft);
+    font-weight: 600;
 }
 
 .brand h1,
@@ -132,6 +158,8 @@ body {
     border: 1px solid transparent;
     background: rgba(255, 255, 255, 0.03);
     font-size: 13px;
+    font-weight: 500;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
 }
 
 .menu__subitem:hover,
@@ -139,6 +167,8 @@ body {
     color: var(--text-main);
     background: rgba(181, 108, 255, 0.16);
     border-color: rgba(229, 209, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 14px 32px rgba(88, 28, 135, 0.18);
 }
 
 .menu__item {
@@ -149,7 +179,13 @@ body {
     border-radius: 18px;
     color: var(--text-main);
     text-decoration: none;
-    transition: 0.2s ease;
+    border: 1px solid transparent;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
+}
+
+.menu__item .muted {
+    color: var(--text-soft);
+    font-weight: 500;
 }
 
 .menu__item i,
@@ -174,6 +210,8 @@ body {
 .menu__item--active {
     background: rgba(181, 108, 255, 0.16);
     border: 1px solid rgba(229, 209, 255, 0.12);
+    transform: translateY(-2px);
+    box-shadow: 0 16px 34px rgba(88, 28, 135, 0.18);
 }
 
 .menu__item:hover i,
@@ -186,14 +224,31 @@ body {
     padding: 22px;
     border-radius: 24px;
     background: linear-gradient(180deg, rgba(181, 108, 255, 0.2), rgba(141, 61, 255, 0.12));
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.support-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 24px 54px rgba(5, 0, 15, 0.3);
+}
+
+.support-card--success {
+    background: linear-gradient(180deg, rgba(99, 242, 167, 0.18), rgba(13, 57, 37, 0.22));
+    border-color: rgba(99, 242, 167, 0.22);
+}
+
+.support-card--warning {
+    background: linear-gradient(180deg, rgba(255, 215, 111, 0.16), rgba(64, 39, 10, 0.22));
+    border-color: rgba(255, 215, 111, 0.2);
 }
 
 .support-card__label {
     margin-bottom: 8px;
-    color: var(--accent-light);
+    color: var(--warning);
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+    font-weight: 800;
 }
 
 .support-card p {
@@ -218,6 +273,14 @@ body {
     background: linear-gradient(135deg, var(--accent), var(--accent-strong));
     color: #fff;
     font-weight: 700;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+}
+
+.support-card button:hover,
+.primary-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 18px 34px rgba(116, 45, 212, 0.3);
+    filter: saturate(1.05);
 }
 
 .dashboard {
@@ -241,6 +304,11 @@ body {
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.08em;
+}
+
+.hero__eyebrow {
+    color: var(--warning);
+    font-weight: 700;
 }
 
 .hero h2 {
@@ -280,7 +348,7 @@ body {
     justify-content: space-between;
     gap: 12px;
     margin-top: 8px;
-    color: var(--text-soft);
+    color: var(--text-muted);
     font-size: 12px;
 }
 
@@ -310,6 +378,14 @@ body {
     display: grid;
     place-items: center;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.ghost-btn:hover {
+    transform: translateY(-2px);
+    border-color: rgba(229, 209, 255, 0.2);
+    background: rgba(181, 108, 255, 0.12);
+    box-shadow: 0 16px 34px rgba(88, 28, 135, 0.18);
 }
 
 .ghost-btn i {
@@ -336,6 +412,7 @@ body {
 
 .balance-card {
     grid-column: span 7;
+    background: linear-gradient(180deg, rgba(99, 242, 167, 0.1), rgba(255, 255, 255, 0.04));
 }
 
 .bank-card {
@@ -352,6 +429,26 @@ body {
 
 .limits-card {
     grid-column: span 12;
+}
+
+.profile-card,
+.balance-card,
+.bank-card,
+.actions-card,
+.transactions-card,
+.limits-card {
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.profile-card:hover,
+.balance-card:hover,
+.bank-card:hover,
+.actions-card:hover,
+.transactions-card:hover,
+.limits-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--border-strong);
+    box-shadow: 0 24px 72px rgba(5, 0, 15, 0.38);
 }
 
 .profile-card__top {
@@ -387,6 +484,12 @@ body {
     background: rgba(255, 255, 255, 0.04);
 }
 
+.balance-card .balance-stats div,
+.profile-card .balance-stats div {
+    border-color: rgba(99, 242, 167, 0.22);
+    background: linear-gradient(180deg, rgba(99, 242, 167, 0.1), rgba(255, 255, 255, 0.03));
+}
+
 .profile-meta span,
 .balance-stats span,
 .bank-card span {
@@ -409,8 +512,16 @@ body {
     justify-content: center;
     padding: 8px 12px;
     border-radius: 999px;
-    background: rgba(126, 247, 184, 0.14);
+    border: 1px solid rgba(99, 242, 167, 0.16);
+    background: var(--success-bg);
     color: var(--success);
+    font-weight: 800;
+}
+
+.status-badge--error {
+    border-color: rgba(255, 117, 143, 0.18);
+    background: var(--danger-bg);
+    color: var(--danger);
 }
 
 .balance-card h3,
@@ -423,6 +534,12 @@ body {
     display: grid;
     gap: 14px;
     margin-top: 24px;
+}
+
+.balance-stats strong,
+.support-card p strong {
+    color: var(--success);
+    text-shadow: 0 0 18px rgba(99, 242, 167, 0.2);
 }
 
 .card-chip {
@@ -452,7 +569,8 @@ body {
 }
 
 .card-lock__button.is-locked {
-    background: linear-gradient(135deg, #6b21a8, #581c87);
+    background: linear-gradient(135deg, var(--danger-strong), #b91c1c);
+    box-shadow: 0 16px 34px rgba(255, 77, 109, 0.24);
 }
 
 .card-lock__hint {
@@ -478,8 +596,25 @@ body {
 }
 
 .panel-heading a {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(229, 209, 255, 0.16);
+    background: rgba(181, 108, 255, 0.14);
     color: var(--accent-light);
     text-decoration: none;
+    white-space: nowrap;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.panel-heading a:hover {
+    transform: translateY(-2px);
+    border-color: rgba(229, 209, 255, 0.26);
+    background: rgba(181, 108, 255, 0.22);
+    box-shadow: 0 16px 32px rgba(88, 28, 135, 0.2);
 }
 
 .panel input,
@@ -492,10 +627,21 @@ body {
     color: var(--text-main);
     font-family: inherit;
     font-size: 15px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
 }
 
 .panel input::placeholder {
-    color: var(--text-soft);
+    color: var(--text-faint);
+}
+
+.panel input:hover,
+.panel select:hover,
+.panel input:focus,
+.panel select:focus {
+    outline: none;
+    border-color: rgba(229, 209, 255, 0.26);
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 0 4px rgba(181, 108, 255, 0.12);
 }
 
 .transfer-table {
@@ -515,12 +661,17 @@ body {
     font-size: 13px;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    color: var(--text-soft);
+    color: var(--accent-light);
     background: rgba(255, 255, 255, 0.04);
+}
+
+.transfer-table tbody tr {
+    transition: background 0.3s ease, transform 0.3s ease;
 }
 
 .transfer-table tbody tr:hover {
     background: rgba(181, 108, 255, 0.08);
+    transform: translateY(-1px);
 }
 
 .status-pill {
@@ -534,13 +685,13 @@ body {
 }
 
 .status-pill--out {
-    color: var(--danger);
-    background: rgba(255, 159, 199, 0.16);
+    color: var(--accent-light);
+    background: rgba(181, 108, 255, 0.18);
 }
 
 .status-pill--in {
     color: var(--success);
-    background: rgba(126, 247, 184, 0.16);
+    background: var(--success-bg);
 }
 
 .user-list {
@@ -596,6 +747,14 @@ body {
     border-radius: 20px;
     background: rgba(255, 255, 255, 0.04);
     border: 1px solid rgba(255, 255, 255, 0.06);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.transaction-item:hover {
+    transform: translateY(-2px);
+    border-color: rgba(229, 209, 255, 0.2);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 18px 36px rgba(5, 0, 15, 0.18);
 }
 
 .transaction-item__icon {
@@ -702,13 +861,15 @@ body {
     color: var(--text-soft);
     font-size: 13px;
     font-weight: 700;
-    transition: 0.2s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
 }
 
+.rates-selector__item:hover span,
 .rates-selector__item input:checked + span {
     background: rgba(181, 108, 255, 0.2);
     border-color: rgba(229, 209, 255, 0.28);
     color: var(--text-main);
+    transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(116, 45, 212, 0.18);
 }
 
@@ -730,6 +891,7 @@ body {
     font-size: 12px;
     text-transform: uppercase;
     letter-spacing: 0.04em;
+    font-weight: 700;
 }
 
 .rates-date-field input {
@@ -752,7 +914,7 @@ body {
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: 0.2s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
 }
 
 .rates-date-action--primary {
@@ -767,6 +929,11 @@ body {
     border-color: rgba(229, 209, 255, 0.28);
     background: rgba(255, 255, 255, 0.08);
     outline: none;
+}
+
+.rates-date-action:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px rgba(88, 28, 135, 0.18);
 }
 
 .rates-chart-meta {
@@ -796,18 +963,21 @@ body {
     font-weight: 800;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.05);
+    color: var(--warning);
+    border: 1px solid rgba(255, 215, 111, 0.18);
+    background: var(--warning-bg);
 }
 
 .rates-chart-meta__badge--up {
-    color: #86efac;
-    background: rgba(34, 197, 94, 0.16);
+    color: var(--success);
+    border-color: rgba(99, 242, 167, 0.18);
+    background: var(--success-bg);
 }
 
 .rates-chart-meta__badge--down {
-    color: #fda4af;
-    background: rgba(239, 68, 68, 0.16);
+    color: var(--danger);
+    border-color: rgba(255, 117, 143, 0.18);
+    background: var(--danger-bg);
 }
 
 .rates-chart-meta__hint {
@@ -832,13 +1002,15 @@ body {
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
-    transition: 0.2s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease, color 0.3s ease;
 }
 
+.rates-intervals__item:hover,
 .rates-intervals__item--active {
     background: rgba(181, 108, 255, 0.2);
     border-color: rgba(229, 209, 255, 0.28);
     color: var(--text-main);
+    transform: translateY(-2px);
     box-shadow: 0 8px 20px rgba(116, 45, 212, 0.18);
 }
 
@@ -971,6 +1143,31 @@ body {
 
 .rates-history-table tbody tr:hover td {
     background: rgba(181, 108, 255, 0.08);
+}
+
+.flash-stack {
+    display: grid;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.flash-banner {
+    padding: 14px 16px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 700;
+}
+
+.flash-banner--ok {
+    border-color: rgba(99, 242, 167, 0.2);
+    background: var(--success-bg);
+    color: var(--success);
+}
+
+.flash-banner--error {
+    border-color: rgba(255, 117, 143, 0.18);
+    background: var(--danger-bg);
+    color: var(--danger);
 }
 
 @keyframes rates-chart-rise {
