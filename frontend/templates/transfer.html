@@ -119,6 +119,10 @@
             action=""
             style="display: grid; gap: 12px;"
             data-available-balance="{{ balances['UAH'] }}"
+            data-transfer-min="{{ transfer_min_amount_uah }}"
+            data-transfer-max="{{ transfer_max_amount_uah }}"
+            data-transfer-daily-limit="{{ transfer_daily_limit_uah }}"
+            data-transfer-daily-total="{{ daily_transfer_total_uah }}"
           >
             <input type="hidden" name="transfer_confirmed" value="0" id="transfer-confirmed-input">
             <input type="hidden" name="transfer_pin" value="" id="transfer-pin-hidden">
@@ -203,6 +207,12 @@
             <p class="muted" style="line-height: 1.7;">
               Введите номер карты в формате <strong>5412 1234 5678 9012</strong>.
               Перевод возможен только на существующую виртуальную карту FelixBank.
+              Минимум: <strong>{{ transfer_min_amount_uah|money }} UAH</strong>.
+              Максимум: <strong>{{ transfer_max_amount_uah|money }} UAH</strong>.
+            </p>
+            <p class="muted" style="line-height: 1.7; margin-top: 10px;">
+              Сегодня уже отправлено: <strong>{{ daily_transfer_total_uah|money }} UAH</strong> из
+              <strong>{{ transfer_daily_limit_uah|money }} UAH</strong>.
             </p>
           </div>
         </article>
