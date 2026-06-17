@@ -219,9 +219,19 @@ def register_transfer_routes(app: Flask) -> None:
                 flash("Подтвердите перевод в окне подтверждения.", "error")
                 return _dashboard_redirect(return_section)
             elif not TRANSFER_PIN_RE.fullmatch(transfer_pin):
+                create_audit_log(
+                    user_id,
+                    "failed_pin",
+                    "Неуспешная попытка перевода: PIN не прошел форматную проверку.",
+                )
                 flash("Введите 4-значный PIN для подтверждения перевода.", "error")
                 return _dashboard_redirect(return_section)
             elif not verify_transfer_pin(user_id, transfer_pin):
+                create_audit_log(
+                    user_id,
+                    "failed_pin",
+                    "Неуспешная попытка перевода: введен неверный PIN.",
+                )
                 flash("Неверный PIN-код подтверждения.", "error")
                 return _dashboard_redirect(return_section)
             else:
@@ -265,6 +275,14 @@ def register_transfer_routes(app: Flask) -> None:
                             int(recipient["id"]),
                             f"Получен перевод +{decimal_to_compact_str(amount)} UAH",
                             kind="success",
+                        )
+                        create_audit_log(
+                            user_id,
+                            "transfer_created",
+                            (
+                                f"Создан перевод {decimal_to_str(amount)} UAH "
+                                f"на карту **** **** **** {normalized_card_number[-4:]}."
+                            ),
                         )
                         masked_card_number = f"**** **** **** {normalized_card_number[-4:]}"
                         flash(
@@ -356,6 +374,14 @@ def register_transfer_routes(app: Flask) -> None:
                             int(recipient["id"]),
                             f"Получен перевод +{decimal_to_compact_str(amount)} {currency_code}",
                             kind="success",
+                        )
+                        create_audit_log(
+                            user_id,
+                            "transfer_created",
+                            (
+                                f"Создан международный перевод {decimal_to_str(amount)} "
+                                f"{currency_code} пользователю {recipient_login}."
+                            ),
                         )
                         flash(
                             f"Международный перевод выполнен: {decimal_to_str(amount)} "

@@ -13,6 +13,7 @@ from ..auth import (
     verify_password,
 )
 from ..config import LOGIN_RE
+from ..db import create_audit_log
 
 
 def register_auth_routes(app: Flask) -> None:
@@ -53,6 +54,11 @@ def register_auth_routes(app: Flask) -> None:
                         session.clear()
                         session["user_id"] = int(user["id"])
                         session["login"] = str(user["login"])
+                        create_audit_log(
+                            int(user["id"]),
+                            "login",
+                            f"Пользователь {user['login']} вошел в систему.",
+                        )
                         return redirect(url_for("profile"))
                 except (pymysql.MySQLError, RuntimeError):
                     app.logger.exception("Database error during login for %s", login_value)

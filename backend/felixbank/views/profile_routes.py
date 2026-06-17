@@ -17,6 +17,7 @@ from ..config import (
     TWOPLACES,
 )
 from ..db import (
+    create_audit_log,
     create_notification,
     get_all_user_logins,
     get_balances,
@@ -114,6 +115,13 @@ def register_profile_routes(app: Flask) -> None:
     @login_required
     def profile():
         if request.args.get("logout"):
+            user = current_user()
+            if user is not None:
+                create_audit_log(
+                    int(user["id"]),
+                    "logout",
+                    f"Пользователь {user['login']} вышел из системы.",
+                )
             session.clear()
             return redirect(url_for("login"))
 
@@ -260,6 +268,14 @@ def register_profile_routes(app: Flask) -> None:
             age=age,
             avatar_filename=avatar_filename_to_save,
         )
+        create_audit_log(
+            user_id,
+            "profile_updated",
+            (
+                f"Профиль обновлен: first_name='{first_name}', "
+                f"last_name='{last_name}', age='{age if age is not None else ''}'."
+            ),
+        )
         flash("Профиль обновлен.", "ok")
         return _dashboard_redirect(return_section)
 
@@ -385,6 +401,11 @@ def register_profile_routes(app: Flask) -> None:
         blocked = bool(payload.get("blocked"))
         set_virtual_card_blocked(int(user["id"]), blocked)
         if blocked:
+            create_audit_log(
+                int(user["id"]),
+                "card_blocked",
+                f"Виртуальная карта пользователя {user['login']} заблокирована.",
+            )
             create_notification(
                 int(user["id"]),
                 "Карта успешно заблокирована",
