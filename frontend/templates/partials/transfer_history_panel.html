@@ -42,6 +42,9 @@
 
     <div class="history-toolbar__actions">
       <form class="history-search-form" method="get" action="{{ url_for(history_route_name) }}">
+        {% if history_section_id %}
+        <input type="hidden" name="section" value="{{ history_section_id }}">
+        {% endif %}
         <input type="hidden" name="history_direction" value="{{ history_filters.direction }}">
         <input type="hidden" name="history_currency" value="{{ history_filters.currency }}">
         <input
