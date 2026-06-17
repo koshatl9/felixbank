@@ -113,7 +113,18 @@ def env_bool(name: str, default: bool = False) -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def env_decimal(name: str, default: str) -> Decimal:
+    raw = env(name, default).strip() or default
+    try:
+        return Decimal(raw)
+    except Exception:
+        return Decimal(default)
+
+
 DEFAULT_TRANSFER_PIN = env("DEFAULT_TRANSFER_PIN", "1234")
+TRANSFER_MIN_AMOUNT_UAH = env_decimal("TRANSFER_MIN_AMOUNT_UAH", "10")
+TRANSFER_MAX_AMOUNT_UAH = env_decimal("TRANSFER_MAX_AMOUNT_UAH", "50000")
+TRANSFER_DAILY_LIMIT_UAH = env_decimal("TRANSFER_DAILY_LIMIT_UAH", "100000")
 
 
 def running_in_docker() -> bool:

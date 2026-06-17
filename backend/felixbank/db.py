@@ -256,6 +256,25 @@ def get_transfer_history_for_user(user_id: int, limit: int = 20) -> list[dict[st
     return rows
 
 
+def get_sender_daily_transfer_total(sender_id: int, currency_code: str = "UAH") -> Decimal:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(amount), 0.00) AS total_amount
+                FROM transfers
+                WHERE sender_id = %s
+                  AND currency_code = %s
+                  AND created_at >= CURRENT_DATE()
+                  AND created_at < DATE_ADD(CURRENT_DATE(), INTERVAL 1 DAY)
+                """,
+                (sender_id, currency_code),
+            )
+            row = cursor.fetchone()
+
+    return Decimal(str((row or {}).get("total_amount") or "0"))
+
+
 def get_all_user_logins(exclude_user_id: int | None = None) -> list[str]:
     with get_db() as connection:
         with connection.cursor() as cursor:
