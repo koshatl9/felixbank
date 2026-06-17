@@ -1,0 +1,57 @@
+<section class="hero">
+  <div>
+    <div class="hero__eyebrow">Профиль</div>
+    <h2>Личные данные</h2>
+    <p class="hero__text">Заполните информацию о себе. Аватар и имя отображаются во всех секциях dashboard.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <article class="panel actions-card" style="grid-column: span 8;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Анкета</div>
+        <h3>Личные данные</h3>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('profile_details') }}" enctype="multipart/form-data" style="display: grid; gap: 12px;">
+      <input type="hidden" name="return_section" value="profile">
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Имя</label>
+        <input name="first_name" value="{{ profile_data.first_name or '' }}" placeholder="Введите имя">
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Фамилия</label>
+        <input name="last_name" value="{{ profile_data.last_name or '' }}" placeholder="Введите фамилию">
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Возраст</label>
+        <input name="age" type="number" min="1" max="120" value="{{ profile_data.age if profile_data.age is not none else '' }}" placeholder="Например: 24">
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Аватар</label>
+        <input name="avatar" type="file" accept=".png,.jpg,.jpeg,.webp,.gif">
+      </div>
+
+      <button class="primary-btn" type="submit">Сохранить профиль</button>
+    </form>
+  </article>
+
+  <article class="panel profile-card" style="grid-column: span 4;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Предпросмотр</div>
+        <h3>Как видно в приветствии</h3>
+      </div>
+    </div>
+    <div style="display: grid; justify-items: center; gap: 14px;">
+      <img class="hero-avatar" src="{{ avatar_url }}" alt="Preview avatar">
+      <div class="muted">{{ profile_data.first_name or login }} {{ profile_data.last_name or '' }}</div>
+    </div>
+  </article>
+</section>

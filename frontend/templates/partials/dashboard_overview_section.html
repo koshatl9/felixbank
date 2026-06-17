@@ -1,0 +1,110 @@
+<section class="hero">
+  <div>
+    <div class="hero__eyebrow">Добро пожаловать</div>
+    <h2>{{ login }}</h2>
+    <p class="hero__text">Единый dashboard FelixBank. Здесь можно просматривать баланс, обменивать валюту, управлять картой и переводами без перехода на отдельные страницы.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <article class="panel profile-card">
+    <div class="profile-card__top">
+      <div class="avatar">{{ login[:1]|upper }}</div>
+      <div>
+        <h3 style="margin-bottom: 6px;">{{ login }}</h3>
+        <span class="status-badge">online</span>
+      </div>
+    </div>
+    <div class="profile-meta">
+      <div>
+        <span>Логин</span>
+        <strong>{{ login }}</strong>
+      </div>
+      <div>
+        <span>Сессия</span>
+        <strong>активна</strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel balance-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Баланс</div>
+        <h3>Ваши средства</h3>
+      </div>
+      <a href="{{ url_for('profile', section='overview') }}">Обновить</a>
+    </div>
+    <div class="balance-stats">
+      <div>
+        <span>UAH</span>
+        <strong>{{ balances['UAH']|money }}</strong>
+      </div>
+      <div>
+        <span>USD</span>
+        <strong>{{ balances['USD']|money }}</strong>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel actions-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Курсы</div>
+        <h3>Валюта к UAH</h3>
+      </div>
+      <a href="{{ url_for('profile', section='rates') }}">К графику</a>
+    </div>
+    <div class="transaction-list">
+      {% for ccy, uah_per_1 in rates_uah_per_1.items() if ccy != 'UAH' %}
+        <div class="transaction-item">
+          <div class="transaction-item__icon">₿</div>
+          <div>
+            <strong>{{ ccy }}</strong>
+            <p>1 {{ ccy }} = {{ '%.4f'|format(uah_per_1) }} UAH</p>
+          </div>
+          <div class="amount amount--positive">+{{ '%.4f'|format(uah_per_1) }}</div>
+        </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  <article class="panel transactions-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Обменник</div>
+        <h3>Обмен валют</h3>
+      </div>
+      <a href="{{ url_for('profile', section='overview') }}">Сброс</a>
+    </div>
+
+    <form method="post" action="{{ url_for('profile') }}" style="display: grid; gap: 12px;">
+      <input type="hidden" name="action" value="exchange">
+      <input type="hidden" name="return_section" value="overview">
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Отдаете</label>
+        <div style="display: grid; grid-template-columns: 1fr 140px; gap: 10px;">
+          <input name="amount" inputmode="decimal" placeholder="Сумма" required>
+          <select name="from" style="padding: 14px 12px; border-radius: 16px; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: var(--text-main);">
+            {% for ccy in rates_uah_per_1.keys() %}
+              <option value="{{ ccy }}">{{ ccy }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Получаете</label>
+        <select name="to" style="padding: 14px 12px; border-radius: 16px; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: var(--text-main);">
+          {% for ccy in rates_uah_per_1.keys() %}
+            <option value="{{ ccy }}" {{ 'selected' if ccy == 'USD' else '' }}>{{ ccy }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <button class="primary-btn" type="submit">Обменять</button>
+      <p class="muted" style="font-size: 13px; line-height: 1.6;">Курсы сейчас демо. Баланс хранится в MySQL.</p>
+    </form>
+  </article>
+</section>

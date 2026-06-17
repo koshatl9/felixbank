@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FelixBank Dashboard</title>
+  <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
+  <script src="{{ url_for('serve_static_file', filename='js/transfer.js') }}" defer></script>
+  <script src="{{ url_for('serve_static_file', filename='js/virtual_card.js') }}" defer></script>
+  <script src="{{ url_for('serve_static_file', filename='js/dashboard.js') }}" defer></script>
+</head>
+<body>
+  <div class="page-shell" data-dashboard-root data-dashboard-default-section="{{ active_section }}">
+    <aside class="sidebar">
+      <div style="display:grid; place-items:center;">
+        <div class="mascot-title">felixBANK</div>
+        <img
+          src="{{ url_for('serve_assets', filename='mascot.png') }}"
+          alt="Mascot"
+          loading="lazy"
+          style="width: 140px; height: auto; margin-bottom: 14px; filter: drop-shadow(0 18px 40px rgba(0,0,0,0.45));"
+        >
+      </div>
+
+      <div class="brand">
+        <div class="brand__logo">{{ login[:1]|upper }}</div>
+        <div>
+          <h1>Профиль</h1>
+          <div class="brand__caption">Пользователь: {{ login }}</div>
+        </div>
+      </div>
+
+      <nav class="menu">
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('profile', section='overview') }}" data-dashboard-target="overview" data-dashboard-match="overview,profile">
+            <i>🏠</i>
+            <div>
+              <div>Главная</div>
+              <div class="muted" style="font-size: 12px;">Обзор профиля</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('profile', section='profile') }}" data-dashboard-target="profile">Профиль</a>
+          </div>
+        </div>
+        <a class="menu__item" href="{{ url_for('profile', section='rates') }}" data-dashboard-target="rates">
+          <i>💱</i>
+          <div>
+            <div>Курсы валют</div>
+            <div class="muted" style="font-size: 12px;">Актуальные курсы</div>
+          </div>
+        </a>
+        <div class="menu__group">
+          <a class="menu__item" href="{{ url_for('profile', section='transfer-card') }}" data-dashboard-target="transfer-card" data-dashboard-match="transfer-card,transfer-international">
+            <i>💳</i>
+            <div>
+              <div>Переводы</div>
+              <div class="muted" style="font-size: 12px;">Карты и переводы</div>
+            </div>
+          </a>
+          <div class="menu__submenu">
+            <a class="menu__subitem" href="{{ url_for('profile', section='transfer-card') }}" data-dashboard-target="transfer-card">Перевод на карту</a>
+            <a class="menu__subitem" href="{{ url_for('profile', section='transfer-international') }}" data-dashboard-target="transfer-international">Международный перевод</a>
+          </div>
+        </div>
+        <a class="menu__item" href="{{ url_for('profile', section='virtual-card') }}" data-dashboard-target="virtual-card">
+          <i>💜</i>
+          <div>
+            <div>Виртуальная карта</div>
+            <div class="muted" style="font-size: 12px;">Реквизиты карты</div>
+          </div>
+        </a>
+        <a class="menu__item" href="{{ url_for('profile', logout=1) }}">
+          <i>⎋</i>
+          <div>
+            <div>Выйти</div>
+            <div class="muted" style="font-size: 12px;">Завершить сессию</div>
+          </div>
+        </a>
+      </nav>
+
+      <div class="support-card support-card--success">
+        <div class="support-card__label">Статус</div>
+        <h2>Единый dashboard</h2>
+        <p>Все ключевые блоки теперь находятся на одной странице. Боковое меню переключает секции без полной перезагрузки.</p>
+        <button type="button" onclick="location.href='{{ url_for('profile', logout=1) }}'">Выйти</button>
+      </div>
+    </aside>
+
+    <main class="dashboard dashboard--spa">
+      <div class="dashboard-toolbar">
+        <div>
+          <div class="section-label">FelixBank</div>
+          <strong class="dashboard-toolbar__title">Рабочий dashboard</strong>
+        </div>
+        <div class="dashboard-toolbar__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
+          <button class="ghost-btn" type="button" title="Выйти" onclick="location.href='{{ url_for('profile', logout=1) }}'"><i>⎋</i></button>
+        </div>
+      </div>
+
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <section class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash-banner {{ 'flash-banner--error' if category == 'error' else 'flash-banner--ok' }}">
+                <strong>{{ message }}</strong>
+              </div>
+            {% endfor %}
+          </section>
+        {% endif %}
+      {% endwith %}
+
+      <div class="dashboard-sections">
+        <section class="dashboard-screen" data-dashboard-section="overview" {% if active_section != 'overview' %}hidden{% endif %}>
+          {% include "partials/dashboard_overview_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="profile" {% if active_section != 'profile' %}hidden{% endif %}>
+          {% include "partials/dashboard_profile_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="rates" {% if active_section != 'rates' %}hidden{% endif %}>
+          {% include "partials/dashboard_rates_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="transfer-card" {% if active_section != 'transfer-card' %}hidden{% endif %}>
+          {% include "partials/dashboard_transfer_card_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="transfer-international" {% if active_section != 'transfer-international' %}hidden{% endif %}>
+          {% include "partials/dashboard_transfer_international_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="virtual-card" {% if active_section != 'virtual-card' %}hidden{% endif %}>
+          {% include "partials/dashboard_virtual_card_section.html" %}
+        </section>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
