@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from functools import wraps
 from typing import Any
 
@@ -7,7 +8,10 @@ from flask import current_app, redirect, session, url_for
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .config import DEFAULT_TRANSFER_PIN, TRANSFER_PIN_RE
-from .db import get_db, seed_balances
+from .db import get_db, get_user_blocked_until, seed_balances
+
+
+BLOCKED_LOGIN_MESSAGE = "Аккаунт временно заблокирован. Подозрительная активность."
 
 
 def current_user() -> dict[str, Any] | None:
@@ -18,11 +22,31 @@ def current_user() -> dict[str, Any] | None:
     return {"id": int(user_id), "login": str(login)}
 
 
+def utc_now_naive() -> datetime:
+    return datetime.now(tz=timezone.utc).replace(tzinfo=None)
+
+
+def blocked_until_is_active(blocked_until: Any) -> bool:
+    if not isinstance(blocked_until, datetime):
+        return False
+    if blocked_until.tzinfo is not None:
+        blocked_until = blocked_until.astimezone(timezone.utc).replace(tzinfo=None)
+    return blocked_until > utc_now_naive()
+
+
+def is_user_temporarily_blocked(user_id: int) -> bool:
+    return blocked_until_is_active(get_user_blocked_until(user_id))
+
+
 def login_required(view):
     @wraps(view)
     def wrapped(*args, **kwargs):
-        if current_user() is None:
+        user = current_user()
+        if user is None:
             return redirect(url_for("login"))
+        if is_user_temporarily_blocked(int(user["id"])):
+            session.clear()
+            return redirect(url_for("login", blocked=1))
         return view(*args, **kwargs)
 
     return wrapped
@@ -33,7 +57,7 @@ def get_user_by_login(login: str) -> dict[str, Any] | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, login, password_hash
+                SELECT id, login, password_hash, blocked_until
                 FROM users
                 WHERE login = %s
                 LIMIT 1

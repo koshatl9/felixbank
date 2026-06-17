@@ -33,6 +33,7 @@ SCHEMA_STATEMENTS = (
         login VARCHAR(32) NOT NULL UNIQUE,
         password_hash VARCHAR(255) NOT NULL,
         transfer_pin_hash VARCHAR(255) NULL,
+        blocked_until DATETIME NULL,
         created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )
     """,
@@ -114,6 +115,19 @@ SCHEMA_STATEMENTS = (
         INDEX idx_notifications_user_created (user_id, created_at)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS audit_logs (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        action VARCHAR(64) NOT NULL,
+        details TEXT NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_audit_logs_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE,
+        INDEX idx_audit_logs_user_created (user_id, created_at)
+    )
+    """,
 )
 
 
@@ -134,10 +148,22 @@ def env_decimal(name: str, default: str) -> Decimal:
         return Decimal(default)
 
 
+def env_int(name: str, default: int) -> int:
+    raw = env(name, str(default)).strip() or str(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
 DEFAULT_TRANSFER_PIN = env("DEFAULT_TRANSFER_PIN", "1234")
 TRANSFER_MIN_AMOUNT_UAH = env_decimal("TRANSFER_MIN_AMOUNT_UAH", "10")
 TRANSFER_MAX_AMOUNT_UAH = env_decimal("TRANSFER_MAX_AMOUNT_UAH", "50000")
 TRANSFER_DAILY_LIMIT_UAH = env_decimal("TRANSFER_DAILY_LIMIT_UAH", "100000")
+ANTIFRAUD_WINDOW_SECONDS = env_int("ANTIFRAUD_WINDOW_SECONDS", 60)
+ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW = env_int("ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW", 5)
+ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW = env_decimal("ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW", "100000")
+ANTIFRAUD_BLOCK_MINUTES = env_int("ANTIFRAUD_BLOCK_MINUTES", 15)
 
 
 def running_in_docker() -> bool:

@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS users (
     login VARCHAR(32) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
     transfer_pin_hash VARCHAR(255) NULL,
+    blocked_until DATETIME NULL,
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -47,4 +48,16 @@ CREATE TABLE IF NOT EXISTS notifications (
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE CASCADE,
     INDEX idx_notifications_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    action VARCHAR(64) NOT NULL,
+    details TEXT NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_audit_logs_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+    INDEX idx_audit_logs_user_created (user_id, created_at)
 );

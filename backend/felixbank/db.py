@@ -57,6 +57,8 @@ def _column_exists(cursor, table_name: str, column_name: str) -> bool:
 def _ensure_user_columns(cursor) -> None:
     if not _column_exists(cursor, "users", "transfer_pin_hash"):
         cursor.execute("ALTER TABLE users ADD COLUMN transfer_pin_hash VARCHAR(255) NULL AFTER password_hash")
+    if not _column_exists(cursor, "users", "blocked_until"):
+        cursor.execute("ALTER TABLE users ADD COLUMN blocked_until DATETIME NULL AFTER transfer_pin_hash")
 
     cursor.execute(
         """
@@ -273,6 +275,75 @@ def get_sender_daily_transfer_total(sender_id: int, currency_code: str = "UAH") 
             row = cursor.fetchone()
 
     return Decimal(str((row or {}).get("total_amount") or "0"))
+
+
+def get_recent_sender_transfers(sender_id: int, since_seconds: int = 60) -> list[dict[str, Any]]:
+    since_dt = (datetime.now(tz=timezone.utc) - timedelta(seconds=max(0, int(since_seconds)))).replace(tzinfo=None)
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, recipient_id, currency_code, amount, created_at
+                FROM transfers
+                WHERE sender_id = %s
+                  AND created_at >= %s
+                ORDER BY created_at ASC, id ASC
+                """,
+                (sender_id, since_dt),
+            )
+            rows = cursor.fetchall()
+
+    return rows
+
+
+def create_audit_log(user_id: int, action: str, details: str) -> None:
+    normalized_action = str(action or "").strip()[:64]
+    normalized_details = str(details or "").strip()
+    if not normalized_action or not normalized_details:
+        return
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO audit_logs (user_id, action, details)
+                VALUES (%s, %s, %s)
+                """,
+                (user_id, normalized_action, normalized_details),
+            )
+        connection.commit()
+
+
+def set_user_blocked_until(user_id: int, blocked_until: datetime | None) -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE users
+                SET blocked_until = %s
+                WHERE id = %s
+                """,
+                (blocked_until, user_id),
+            )
+        connection.commit()
+
+
+def get_user_blocked_until(user_id: int) -> datetime | None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT blocked_until
+                FROM users
+                WHERE id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+    return (row or {}).get("blocked_until")
 
 
 def create_notification(user_id: int, title: str, kind: str = "info") -> None:

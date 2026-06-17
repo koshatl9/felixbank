@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pymysql
-from flask import Flask, flash, redirect, render_template, request, url_for
+from flask import Flask, flash, redirect, render_template, request, session, url_for
 
 from ..auth import current_user, get_user_by_login, login_required, verify_transfer_pin
 from ..config import (
+    ANTIFRAUD_BLOCK_MINUTES,
+    ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW,
+    ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW,
+    ANTIFRAUD_WINDOW_SECONDS,
     DEFAULT_TRANSFER_PIN,
     TRANSFER_DAILY_LIMIT_UAH,
     TRANSFER_MAX_AMOUNT_UAH,
@@ -14,18 +19,62 @@ from ..config import (
     TRANSFER_PIN_RE,
 )
 from ..db import (
+    create_audit_log,
     create_notification,
     get_all_user_logins,
     get_balances,
+    get_recent_sender_transfers,
     get_sender_daily_transfer_total,
     get_transfer_history_for_user,
     get_user_by_virtual_card_number,
     get_user_profile,
     normalize_virtual_card_number,
+    set_user_blocked_until,
     transfer_balance,
 )
 from ..utils import decimal_input, decimal_to_compact_str, decimal_to_str
-from .common import avatar_url_for
+from .common import RATES_UAH_PER_1, avatar_url_for
+
+
+def _amount_to_uah(amount: Decimal, currency_code: str) -> Decimal:
+    normalized_code = str(currency_code or "").strip().upper()
+    rate = Decimal(str(RATES_UAH_PER_1.get(normalized_code, Decimal("1"))))
+    return (Decimal(str(amount)) * rate).quantize(Decimal("0.01"))
+
+
+def _recent_transfer_projection(
+    user_id: int,
+    pending_amount: Decimal,
+    currency_code: str,
+) -> tuple[int, Decimal]:
+    recent_transfers = get_recent_sender_transfers(user_id, since_seconds=ANTIFRAUD_WINDOW_SECONDS)
+    projected_total_uah = _amount_to_uah(pending_amount, currency_code)
+
+    for transfer_row in recent_transfers:
+        projected_total_uah += _amount_to_uah(
+            Decimal(str(transfer_row["amount"])),
+            str(transfer_row["currency_code"]),
+        )
+
+    return len(recent_transfers) + 1, projected_total_uah.quantize(Decimal("0.01"))
+
+
+def _anti_fraud_block_response(user_id: int, projected_count: int, projected_total_uah: Decimal):
+    blocked_until = (
+        datetime.now(tz=timezone.utc) + timedelta(minutes=ANTIFRAUD_BLOCK_MINUTES)
+    ).replace(tzinfo=None)
+    set_user_blocked_until(user_id, blocked_until)
+    create_audit_log(
+        user_id,
+        "antifraud_block",
+        (
+            f"Подозрительная активность: {projected_count} переводов за "
+            f"{ANTIFRAUD_WINDOW_SECONDS} секунд, сумма "
+            f"{decimal_to_str(projected_total_uah)} UAH."
+        ),
+    )
+    session.clear()
+    return redirect(url_for("login", blocked=1))
 
 
 def register_transfer_routes(app: Flask) -> None:
@@ -61,8 +110,6 @@ def register_transfer_routes(app: Flask) -> None:
                 flash("Максимальная сумма перевода — 50 000 UAH", "error")
             elif amount > available_uah:
                 flash("Недостаточно средств для перевода.", "error")
-            elif daily_transfer_total + amount > TRANSFER_DAILY_LIMIT_UAH:
-                flash("Дневной лимит переводов превышен", "error")
             elif not transfer_confirmed:
                 flash("Подтвердите перевод в окне подтверждения.", "error")
             elif not TRANSFER_PIN_RE.fullmatch(transfer_pin):
@@ -78,6 +125,19 @@ def register_transfer_routes(app: Flask) -> None:
                 elif bool(recipient.get("is_blocked")):
                     flash("Карта получателя заблокирована.", "error")
                 else:
+                    projected_count, projected_total_uah = _recent_transfer_projection(
+                        user_id,
+                        amount,
+                        "UAH",
+                    )
+                    if (
+                        projected_count > ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW
+                        or projected_total_uah > ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW
+                    ):
+                        return _anti_fraud_block_response(user_id, projected_count, projected_total_uah)
+                    if daily_transfer_total + amount > TRANSFER_DAILY_LIMIT_UAH:
+                        flash("Дневной лимит переводов превышен", "error")
+                        return redirect(url_for("transfer"))
                     try:
                         transfer_balance(
                             sender_id=user_id,
@@ -155,6 +215,16 @@ def register_transfer_routes(app: Flask) -> None:
                 if recipient is None:
                     flash("Получатель не найден.", "error")
                 else:
+                    projected_count, projected_total_uah = _recent_transfer_projection(
+                        user_id,
+                        amount,
+                        currency_code,
+                    )
+                    if (
+                        projected_count > ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW
+                        or projected_total_uah > ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW
+                    ):
+                        return _anti_fraud_block_response(user_id, projected_count, projected_total_uah)
                     try:
                         transfer_balance(
                             sender_id=user_id,

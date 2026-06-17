@@ -3,7 +3,15 @@ from __future__ import annotations
 import pymysql
 from flask import Flask, redirect, render_template, request, session, url_for
 
-from ..auth import create_user, current_user, get_user_by_login, verify_password
+from ..auth import (
+    BLOCKED_LOGIN_MESSAGE,
+    blocked_until_is_active,
+    create_user,
+    current_user,
+    get_user_by_login,
+    is_user_temporarily_blocked,
+    verify_password,
+)
 from ..config import LOGIN_RE
 
 
@@ -14,10 +22,15 @@ def register_auth_routes(app: Flask) -> None:
 
     @app.route("/login/", methods=["GET", "POST"])
     def login():
-        if current_user() is not None:
-            return redirect(url_for("profile"))
+        error = BLOCKED_LOGIN_MESSAGE if request.args.get("blocked") else None
+        user_session = current_user()
+        if user_session is not None:
+            if is_user_temporarily_blocked(int(user_session["id"])):
+                session.clear()
+                error = BLOCKED_LOGIN_MESSAGE
+            else:
+                return redirect(url_for("profile"))
 
-        error = None
         if request.method == "POST":
             login_value = (request.form.get("login") or "").strip()
             password = request.form.get("password") or ""
@@ -31,6 +44,9 @@ def register_auth_routes(app: Flask) -> None:
                     user = get_user_by_login(login_value)
                     if user is None:
                         error = "Пользователь не найден. Зарегистрируйтесь."
+                    elif blocked_until_is_active(user.get("blocked_until")):
+                        session.clear()
+                        error = BLOCKED_LOGIN_MESSAGE
                     elif not verify_password(str(user["password_hash"]), password):
                         error = "Неверный пароль."
                     else:
