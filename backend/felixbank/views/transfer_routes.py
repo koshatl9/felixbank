@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import csv
+import io
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pymysql
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
 
 from ..auth import current_user, get_user_by_login, login_required, verify_transfer_pin
 from ..config import (
@@ -34,6 +36,9 @@ from ..db import (
 )
 from ..utils import decimal_input, decimal_to_compact_str, decimal_to_str
 from .common import RATES_UAH_PER_1, avatar_url_for
+
+HISTORY_DIRECTION_VALUES = {"all", "incoming", "outgoing"}
+HISTORY_CURRENCY_VALUES = {"all", "UAH", "USD"}
 
 
 def _amount_to_uah(amount: Decimal, currency_code: str) -> Decimal:
@@ -77,6 +82,87 @@ def _anti_fraud_block_response(user_id: int, projected_count: int, projected_tot
     return redirect(url_for("login", blocked=1))
 
 
+def _read_history_filters() -> dict[str, str]:
+    direction = str(request.args.get("history_direction") or "all").strip().lower()
+    if direction not in HISTORY_DIRECTION_VALUES:
+        direction = "all"
+
+    currency = str(request.args.get("history_currency") or "all").strip().upper()
+    if currency not in HISTORY_CURRENCY_VALUES:
+        currency = "all"
+
+    search = str(request.args.get("history_search") or "").strip()[:64]
+    return {
+        "direction": direction,
+        "currency": currency,
+        "search": search,
+    }
+
+
+def _history_url(
+    endpoint: str,
+    filters: dict[str, str],
+    *,
+    direction: str | None = None,
+    currency: str | None = None,
+    search: str | None = None,
+    download_csv: bool = False,
+) -> str:
+    normalized_direction = filters["direction"] if direction is None else direction
+    normalized_currency = filters["currency"] if currency is None else currency
+    normalized_search = filters["search"] if search is None else search
+    params: dict[str, str] = {}
+
+    if normalized_direction and normalized_direction != "all":
+        params["history_direction"] = normalized_direction
+    if normalized_currency and normalized_currency != "all":
+        params["history_currency"] = normalized_currency
+    if normalized_search:
+        params["history_search"] = normalized_search
+    if download_csv:
+        params["download"] = "csv"
+
+    return url_for(endpoint, **params)
+
+
+def _history_links(endpoint: str, filters: dict[str, str]) -> dict[str, str]:
+    return {
+        "reset": _history_url(endpoint, filters, direction="all", currency="all"),
+        "incoming": _history_url(endpoint, filters, direction="incoming"),
+        "outgoing": _history_url(endpoint, filters, direction="outgoing"),
+        "uah": _history_url(endpoint, filters, currency="UAH"),
+        "usd": _history_url(endpoint, filters, currency="USD"),
+        "csv": _history_url(endpoint, filters, download_csv=True),
+    }
+
+
+def _history_csv_response(history: list[dict[str, object]], user_id: int, filename_prefix: str) -> Response:
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Дата", "Отправитель", "Получатель", "Сумма", "Валюта", "Статус"])
+
+    for row in history:
+        created_at = row.get("created_at")
+        status = "Исходящий" if int(row["sender_id"]) == user_id else "Входящий"
+        writer.writerow(
+            [
+                created_at.strftime("%d.%m.%Y %H:%M") if created_at else "",
+                str(row.get("sender_login") or ""),
+                str(row.get("recipient_login") or ""),
+                decimal_to_str(Decimal(str(row.get("amount") or "0"))),
+                str(row.get("currency_code") or ""),
+                status,
+            ]
+        )
+
+    payload = "\ufeff" + output.getvalue()
+    return Response(
+        payload,
+        content_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename_prefix}.csv"'},
+    )
+
+
 def register_transfer_routes(app: Flask) -> None:
     @app.route("/profile/transfer", methods=["GET", "POST"])
     @login_required
@@ -86,6 +172,7 @@ def register_transfer_routes(app: Flask) -> None:
         user_id = int(user["id"])
         balances = get_balances(user_id)
         daily_transfer_total = get_sender_daily_transfer_total(user_id, "UAH")
+        history_filters = _read_history_filters()
 
         if request.method == "POST":
             recipient_card_number_raw = (request.form.get("recipient_card_number") or "").strip()
@@ -171,13 +258,25 @@ def register_transfer_routes(app: Flask) -> None:
                         )
                         flash("Ошибка базы данных при выполнении перевода.", "error")
 
-        history = get_transfer_history_for_user(user_id, limit=20)
+        history = get_transfer_history_for_user(
+            user_id,
+            limit=None if request.args.get("download") == "csv" else 50,
+            direction=history_filters["direction"],
+            currency_code=None if history_filters["currency"] == "all" else history_filters["currency"],
+            search_query=history_filters["search"],
+        )
+        if request.method == "GET" and request.args.get("download") == "csv":
+            return _history_csv_response(history, user_id, "felixbank-transfer-history")
+
         user_profile = get_user_profile(user_id)
         return render_template(
             "transfer.html",
             login=user["login"],
             balances=balances,
             history=history,
+            history_filters=history_filters,
+            history_links=_history_links("transfer", history_filters),
+            history_route_name="transfer",
             user_id=user_id,
             profile_data=user_profile,
             avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
@@ -196,6 +295,7 @@ def register_transfer_routes(app: Flask) -> None:
         user_id = int(user["id"])
         balances = get_balances(user_id)
         users = get_all_user_logins(exclude_user_id=user_id)
+        history_filters = _read_history_filters()
 
         if request.method == "POST":
             recipient_login = (request.form.get("recipient_login") or "").strip()
@@ -258,13 +358,25 @@ def register_transfer_routes(app: Flask) -> None:
                         )
                         flash("Ошибка базы данных при международном переводе.", "error")
 
-        history = get_transfer_history_for_user(user_id, limit=20)
+        history = get_transfer_history_for_user(
+            user_id,
+            limit=None if request.args.get("download") == "csv" else 50,
+            direction=history_filters["direction"],
+            currency_code=None if history_filters["currency"] == "all" else history_filters["currency"],
+            search_query=history_filters["search"],
+        )
+        if request.method == "GET" and request.args.get("download") == "csv":
+            return _history_csv_response(history, user_id, "felixbank-transfer-history")
+
         user_profile = get_user_profile(user_id)
         return render_template(
             "transfer_international.html",
             login=user["login"],
             balances=balances,
             history=history,
+            history_filters=history_filters,
+            history_links=_history_links("transfer_international", history_filters),
+            history_route_name="transfer_international",
             user_id=user_id,
             users=users,
             profile_data=user_profile,

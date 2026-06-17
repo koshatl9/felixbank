@@ -222,49 +222,7 @@
           </div>
         </article>
 
-        <article class="panel limits-card">
-          <div class="panel-heading">
-            <div>
-              <div class="section-label">История</div>
-              <h3>Последние переводы</h3>
-            </div>
-          </div>
-
-          {% if history %}
-          <div style="overflow-x: auto;">
-            <table class="transfer-table">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Отправитель</th>
-                  <th>Получатель</th>
-                  <th>Сумма</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for t in history %}
-                <tr>
-                  <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '-' }}</td>
-                  <td>{{ t.sender_login }}</td>
-                  <td>{{ t.recipient_login }}</td>
-                  <td>{{ t.amount|money }} {{ t.currency_code }}</td>
-                  <td>
-                    {% if t.sender_id == user_id %}
-                    <span class="status-pill status-pill--out">Исходящий</span>
-                    {% else %}
-                    <span class="status-pill status-pill--in">Входящий</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <p class="muted">Пока нет переводов. После первой операции запись появится здесь.</p>
-          {% endif %}
-        </article>
+        {% include "partials/transfer_history_panel.html" %}
       </section>
     </main>
   </div>

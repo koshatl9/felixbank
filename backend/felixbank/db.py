@@ -230,11 +230,38 @@ def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currenc
         connection.commit()
 
 
-def get_transfer_history_for_user(user_id: int, limit: int = 20) -> list[dict[str, Any]]:
+def get_transfer_history_for_user(
+    user_id: int,
+    limit: int | None = 20,
+    direction: str = "all",
+    currency_code: str | None = None,
+    search_query: str = "",
+) -> list[dict[str, Any]]:
+    normalized_direction = str(direction or "all").strip().lower()
+    normalized_currency = str(currency_code or "").strip().upper()[:3]
+    normalized_search = str(search_query or "").strip()
+    conditions = ["(t.sender_id = %s OR t.recipient_id = %s)"]
+    params: list[Any] = [user_id, user_id]
+
+    if normalized_direction == "incoming":
+        conditions.append("t.recipient_id = %s")
+        params.append(user_id)
+    elif normalized_direction == "outgoing":
+        conditions.append("t.sender_id = %s")
+        params.append(user_id)
+
+    if normalized_currency:
+        conditions.append("t.currency_code = %s")
+        params.append(normalized_currency)
+
+    if normalized_search:
+        like_value = f"%{normalized_search}%"
+        conditions.append("(sender.login LIKE %s OR recipient.login LIKE %s)")
+        params.extend([like_value, like_value])
+
     with get_db() as connection:
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
+            query = """
                 SELECT
                     t.id,
                     t.sender_id,
@@ -247,12 +274,18 @@ def get_transfer_history_for_user(user_id: int, limit: int = 20) -> list[dict[st
                 FROM transfers AS t
                 JOIN users AS sender ON sender.id = t.sender_id
                 JOIN users AS recipient ON recipient.id = t.recipient_id
-                WHERE t.sender_id = %s OR t.recipient_id = %s
+                WHERE
+            """
+            query += " AND ".join(conditions)
+            query += """
                 ORDER BY t.created_at DESC, t.id DESC
-                LIMIT %s
-                """,
-                (user_id, user_id, limit),
-            )
+            """
+
+            if limit is not None:
+                query += " LIMIT %s"
+                params.append(max(1, int(limit)))
+
+            cursor.execute(query, tuple(params))
             rows = cursor.fetchall()
 
     return rows
