@@ -290,12 +290,15 @@ label.muted {
 }
 
 .hero {
+    position: relative;
+    z-index: 12;
     display: flex;
     justify-content: space-between;
     align-items: center;
     gap: 24px;
     padding: 28px 30px;
     border-radius: 28px;
+    overflow: visible;
 }
 
 .hero__eyebrow,
@@ -353,9 +356,144 @@ label.muted {
 }
 
 .hero__actions {
+    position: relative;
+    z-index: 20;
     display: flex;
     align-items: center;
     gap: 12px;
+}
+
+.notifications {
+    position: relative;
+    z-index: 40;
+}
+
+.notifications--open {
+    z-index: 70;
+}
+
+.notification-bell {
+    position: relative;
+}
+
+.notification-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 22px;
+    height: 22px;
+    padding: 0 6px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--warning-strong), #ffdb6e);
+    color: #241133;
+    font-size: 11px;
+    font-weight: 800;
+    box-shadow: 0 10px 22px rgba(255, 185, 56, 0.24);
+}
+
+.notification-panel {
+    position: absolute;
+    top: calc(100% + 12px);
+    right: 0;
+    z-index: 120;
+    width: min(360px, calc(100vw - 36px));
+    padding: 18px;
+    border-radius: 24px;
+    border: 1px solid rgba(229, 209, 255, 0.16);
+    background:
+        radial-gradient(circle at top left, rgba(181, 108, 255, 0.16), transparent 38%),
+        linear-gradient(180deg, rgba(35, 16, 60, 0.98), rgba(20, 9, 34, 0.98));
+    box-shadow: 0 28px 70px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(16px);
+}
+
+.notification-panel[hidden] {
+    display: none !important;
+}
+
+.notification-panel__title {
+    margin-bottom: 14px;
+    color: var(--text-main);
+    font-size: 18px;
+    font-weight: 800;
+}
+
+.notification-list {
+    display: grid;
+    gap: 10px;
+    max-height: 320px;
+    overflow-y: auto;
+}
+
+.notification-item {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 12px;
+    padding: 14px 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.04);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+
+.notification-item:hover {
+    transform: translateY(-2px);
+    border-color: rgba(229, 209, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    box-shadow: 0 16px 32px rgba(5, 0, 15, 0.18);
+}
+
+.notification-item__icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+    color: #ffffff;
+}
+
+.notification-item strong,
+.notification-item span {
+    display: block;
+}
+
+.notification-item strong {
+    color: var(--text-main);
+    line-height: 1.45;
+}
+
+.notification-item span {
+    margin-top: 4px;
+    color: var(--text-muted);
+    font-size: 12px;
+}
+
+.notification-item--success .notification-item__icon {
+    background: linear-gradient(135deg, var(--success-strong), var(--success));
+}
+
+.notification-item--info .notification-item__icon {
+    background: linear-gradient(135deg, var(--accent-strong), var(--accent));
+}
+
+.notification-item--warning .notification-item__icon {
+    background: linear-gradient(135deg, var(--warning-strong), var(--warning));
+    color: #241133;
+}
+
+.notification-empty {
+    padding: 16px 14px;
+    border-radius: 18px;
+    color: var(--text-muted);
+    border: 1px dashed rgba(229, 209, 255, 0.14);
+    background: rgba(255, 255, 255, 0.03);
+    line-height: 1.6;
 }
 
 .hero-avatar {
@@ -396,6 +534,8 @@ label.muted {
 }
 
 .content-grid {
+    position: relative;
+    z-index: 1;
     display: grid;
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: 24px;
@@ -1425,6 +1565,17 @@ label.muted {
     .profile-meta,
     .actions-grid {
         grid-template-columns: 1fr;
+    }
+
+    .hero__actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .notification-panel {
+        right: auto;
+        left: 0;
+        width: min(360px, calc(100vw - 52px));
     }
 
     .transaction-item {

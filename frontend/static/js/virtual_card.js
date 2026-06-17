@@ -89,6 +89,9 @@ if (cardLockButton) {
       isLocked = Boolean(data.blocked);
       cardLockButton.dataset.blocked = String(isLocked);
       applyLockState(isLocked);
+      if (window.FelixNotifications && typeof window.FelixNotifications.refresh === "function") {
+        window.FelixNotifications.refresh();
+      }
     } catch (error) {
       if (cardLockHint) {
         cardLockHint.textContent = "Не удалось обновить статус карты. Попробуйте ещё раз.";
