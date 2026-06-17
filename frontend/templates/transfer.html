@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Перевод на карту</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/transfer.js') }}" defer></script>
 </head>
 
 <body>
@@ -112,12 +113,23 @@
             </div>
           </div>
 
-          <form method="post" action="" style="display: grid; gap: 12px;">
+          <form
+            id="transfer-form"
+            method="post"
+            action=""
+            style="display: grid; gap: 12px;"
+            data-available-balance="{{ balances['UAH'] }}"
+          >
+            <input type="hidden" name="transfer_confirmed" value="0" id="transfer-confirmed-input">
+            <input type="hidden" name="transfer_pin" value="" id="transfer-pin-hidden">
+            <div id="transfer-client-error" class="flash-banner flash-banner--error" hidden></div>
+
             <div style="display: grid; gap: 8px;">
               <label class="muted" style="font-size: 13px;">Номер виртуальной карты</label>
               <input
                 name="recipient_card_number"
                 inputmode="numeric"
+                autocomplete="cc-number"
                 placeholder="5412 1234 5678 9012"
                 value="{{ request.form.get('recipient_card_number', '') }}"
                 required
@@ -131,6 +143,42 @@
 
             <button class="primary-btn" type="submit">Отправить перевод</button>
           </form>
+
+          <div class="modal-backdrop" id="transfer-confirm-modal" hidden>
+            <div class="modal-card transfer-modal" role="dialog" aria-modal="true" aria-labelledby="transfer-confirm-title">
+              <div class="section-label">Подтверждение</div>
+              <h3 id="transfer-confirm-title">Подтвердите перевод</h3>
+              <div class="transfer-review">
+                <div class="transfer-review__row">
+                  <span>Карта получателя</span>
+                  <strong id="transfer-confirm-card">**** **** **** 0000</strong>
+                </div>
+                <div class="transfer-review__row">
+                  <span>Сумма</span>
+                  <strong id="transfer-confirm-amount">0 UAH</strong>
+                </div>
+              </div>
+
+              <div class="transfer-pin-panel">
+                <label class="muted" style="font-size: 13px;" for="transfer-pin-modal">Введите 4-значный PIN</label>
+                <input
+                  id="transfer-pin-modal"
+                  type="password"
+                  inputmode="numeric"
+                  maxlength="4"
+                  placeholder="••••"
+                  autocomplete="one-time-code"
+                >
+                <p class="muted transfer-pin-hint">Демо PIN для подтверждения: <strong>{{ demo_transfer_pin }}</strong></p>
+                <div id="transfer-modal-error" class="flash-banner flash-banner--error" hidden></div>
+              </div>
+
+              <div class="transfer-modal__actions">
+                <button type="button" class="secondary-btn" id="transfer-cancel-button">Отмена</button>
+                <button type="button" class="primary-btn" id="transfer-confirm-button">Подтвердить</button>
+              </div>
+            </div>
+          </div>
         </article>
 
         <article class="panel profile-card" style="grid-column: span 5;">
