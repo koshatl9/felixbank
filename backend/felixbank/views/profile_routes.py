@@ -235,8 +235,13 @@ def register_profile_routes(app: Flask) -> None:
         return_section = _normalized_dashboard_section(request.form.get("return_section"), "profile")
         first_name = (request.form.get("first_name") or "").strip()
         last_name = (request.form.get("last_name") or "").strip()
+        email = (request.form.get("email") or "").strip()
         age_raw = (request.form.get("age") or "").strip()
         age: int | None = None
+
+        if email and ("@" not in email or email.startswith("@") or email.endswith("@")):
+            flash("Введите корректный email для кода подтверждения.", "error")
+            return _dashboard_redirect(return_section)
 
         if age_raw:
             try:
@@ -265,6 +270,7 @@ def register_profile_routes(app: Flask) -> None:
             user_id=user_id,
             first_name=first_name,
             last_name=last_name,
+            email=email,
             age=age,
             avatar_filename=avatar_filename_to_save,
         )
@@ -273,7 +279,7 @@ def register_profile_routes(app: Flask) -> None:
             "profile_updated",
             (
                 f"Профиль обновлен: first_name='{first_name}', "
-                f"last_name='{last_name}', age='{age if age is not None else ''}'."
+                f"last_name='{last_name}', email='{email}', age='{age if age is not None else ''}'."
             ),
         )
         flash("Профиль обновлен.", "ok")

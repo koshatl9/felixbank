@@ -17,6 +17,19 @@ CREATE TABLE IF NOT EXISTS balances (
         ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS user_profiles (
+    user_id INT NOT NULL PRIMARY KEY,
+    first_name VARCHAR(64) NOT NULL DEFAULT '',
+    last_name VARCHAR(64) NOT NULL DEFAULT '',
+    email VARCHAR(255) NOT NULL DEFAULT '',
+    age INT NULL,
+    avatar_filename VARCHAR(255) NOT NULL DEFAULT '',
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user_profiles_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE IF NOT EXISTS currency_rates_history (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     currency_code CHAR(3) NOT NULL,
@@ -60,4 +73,19 @@ CREATE TABLE IF NOT EXISTS audit_logs (
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE CASCADE,
     INDEX idx_audit_logs_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS login_2fa_codes (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    code_hash VARCHAR(255) NOT NULL,
+    channel VARCHAR(16) NOT NULL DEFAULT 'email',
+    target VARCHAR(255) NOT NULL DEFAULT '',
+    expires_at DATETIME NOT NULL,
+    used_at DATETIME NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_login_2fa_codes_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+    INDEX idx_login_2fa_codes_user_created (user_id, created_at)
 );

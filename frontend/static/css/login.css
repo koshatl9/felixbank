@@ -126,6 +126,12 @@ body {
     cursor: pointer;
 }
 
+.btn--secondary {
+    background: rgba(255, 255, 255, 0.12);
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
 .register-link {
     margin-top: 18px;
     text-align: center;
@@ -138,4 +144,26 @@ body {
     border-radius: 14px;
     background: rgba(0, 0, 0, 0.18);
     border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.wrapper__info,
+.wrapper__hint {
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.08);
+    line-height: 1.5;
+}
+
+.wrapper__meta {
+    margin: 0 0 18px;
+    color: rgba(255, 255, 255, 0.82);
+    text-align: center;
+    line-height: 1.5;
+}
+
+.wrapper__actions {
+    display: grid;
+    gap: 12px;
 }
