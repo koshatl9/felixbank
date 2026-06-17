@@ -21,6 +21,7 @@ load_dotenv(PROJECT_DIR / ".env", override=True)
 
 LOGIN_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,32}$")
 TRANSFER_PIN_RE = re.compile(r"^\d{4}$")
+LOGIN_2FA_CODE_RE = re.compile(r"^\d{6}$")
 TWOPLACES = Decimal("0.01")
 INITIAL_BALANCES = {
     "UAH": Decimal("15000.00"),
@@ -71,6 +72,7 @@ SCHEMA_STATEMENTS = (
         user_id INT NOT NULL PRIMARY KEY,
         first_name VARCHAR(64) NOT NULL DEFAULT '',
         last_name VARCHAR(64) NOT NULL DEFAULT '',
+        email VARCHAR(255) NOT NULL DEFAULT '',
         age INT NULL,
         avatar_filename VARCHAR(255) NOT NULL DEFAULT '',
         updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -128,6 +130,22 @@ SCHEMA_STATEMENTS = (
         INDEX idx_audit_logs_user_created (user_id, created_at)
     )
     """,
+    """
+    CREATE TABLE IF NOT EXISTS login_2fa_codes (
+        id BIGINT AUTO_INCREMENT PRIMARY KEY,
+        user_id INT NOT NULL,
+        code_hash VARCHAR(255) NOT NULL,
+        channel VARCHAR(16) NOT NULL DEFAULT 'email',
+        target VARCHAR(255) NOT NULL DEFAULT '',
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT fk_login_2fa_codes_user
+            FOREIGN KEY (user_id) REFERENCES users(id)
+            ON DELETE CASCADE,
+        INDEX idx_login_2fa_codes_user_created (user_id, created_at)
+    )
+    """,
 )
 
 
@@ -164,6 +182,14 @@ ANTIFRAUD_WINDOW_SECONDS = env_int("ANTIFRAUD_WINDOW_SECONDS", 60)
 ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW = env_int("ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW", 5)
 ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW = env_decimal("ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW", "100000")
 ANTIFRAUD_BLOCK_MINUTES = env_int("ANTIFRAUD_BLOCK_MINUTES", 15)
+LOGIN_2FA_CODE_TTL_SECONDS = env_int("LOGIN_2FA_CODE_TTL_SECONDS", 300)
+SMTP_HOST = env("SMTP_HOST", "")
+SMTP_PORT = env_int("SMTP_PORT", 587)
+SMTP_USER = env("SMTP_USER", "")
+SMTP_PASSWORD = env("SMTP_PASSWORD", "")
+SMTP_FROM = env("SMTP_FROM", "")
+SMTP_USE_TLS = env_bool("SMTP_USE_TLS", True)
+SMTP_USE_SSL = env_bool("SMTP_USE_SSL", False)
 
 
 def running_in_docker() -> bool:

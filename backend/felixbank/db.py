@@ -31,6 +31,7 @@ def ensure_schema() -> None:
             for statement in SCHEMA_STATEMENTS:
                 cursor.execute(statement)
             _ensure_user_columns(cursor)
+            _ensure_user_profile_columns(cursor)
             _ensure_virtual_card_columns(cursor)
         connection.commit()
 
@@ -68,6 +69,11 @@ def _ensure_user_columns(cursor) -> None:
         """,
         (_default_transfer_pin_hash(),),
     )
+
+
+def _ensure_user_profile_columns(cursor) -> None:
+    if not _column_exists(cursor, "user_profiles", "email"):
+        cursor.execute("ALTER TABLE user_profiles ADD COLUMN email VARCHAR(255) NOT NULL DEFAULT '' AFTER last_name")
 
 
 def _ensure_virtual_card_columns(cursor) -> None:
@@ -477,7 +483,7 @@ def get_user_profile(user_id: int) -> dict[str, Any]:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT user_id, first_name, last_name, age, avatar_filename
+                SELECT user_id, first_name, last_name, email, age, avatar_filename
                 FROM user_profiles
                 WHERE user_id = %s
                 LIMIT 1
@@ -491,6 +497,7 @@ def get_user_profile(user_id: int) -> dict[str, Any]:
             "user_id": user_id,
             "first_name": "",
             "last_name": "",
+            "email": "",
             "age": None,
             "avatar_filename": "",
         }
@@ -646,6 +653,7 @@ def save_user_profile(
     user_id: int,
     first_name: str,
     last_name: str,
+    email: str,
     age: int | None,
     avatar_filename: str | None = None,
 ) -> None:
@@ -654,28 +662,105 @@ def save_user_profile(
             if avatar_filename is None:
                 cursor.execute(
                     """
-                    INSERT INTO user_profiles (user_id, first_name, last_name, age)
-                    VALUES (%s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE
-                        first_name = VALUES(first_name),
-                        last_name = VALUES(last_name),
-                        age = VALUES(age)
-                    """,
-                    (user_id, first_name, last_name, age),
-                )
-            else:
-                cursor.execute(
-                    """
-                    INSERT INTO user_profiles (user_id, first_name, last_name, age, avatar_filename)
+                    INSERT INTO user_profiles (user_id, first_name, last_name, email, age)
                     VALUES (%s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         first_name = VALUES(first_name),
                         last_name = VALUES(last_name),
+                        email = VALUES(email),
+                        age = VALUES(age)
+                    """,
+                    (user_id, first_name, last_name, email, age),
+                )
+            else:
+                cursor.execute(
+                    """
+                    INSERT INTO user_profiles (user_id, first_name, last_name, email, age, avatar_filename)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        first_name = VALUES(first_name),
+                        last_name = VALUES(last_name),
+                        email = VALUES(email),
                         age = VALUES(age),
                         avatar_filename = VALUES(avatar_filename)
                     """,
-                    (user_id, first_name, last_name, age, avatar_filename),
+                    (user_id, first_name, last_name, email, age, avatar_filename),
                 )
+        connection.commit()
+
+
+def create_login_2fa_code(
+    user_id: int,
+    code_hash: str,
+    channel: str,
+    target: str,
+    expires_at: datetime,
+) -> int:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE login_2fa_codes
+                SET used_at = %s
+                WHERE user_id = %s AND used_at IS NULL
+                """,
+                (datetime.now(tz=timezone.utc).replace(tzinfo=None), user_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO login_2fa_codes (user_id, code_hash, channel, target, expires_at)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (user_id, code_hash, channel[:16], target[:255], expires_at),
+            )
+            record_id = int(cursor.lastrowid)
+        connection.commit()
+    return record_id
+
+
+def get_active_login_2fa_code(user_id: int) -> dict[str, Any] | None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, user_id, code_hash, channel, target, expires_at, used_at, created_at
+                FROM login_2fa_codes
+                WHERE user_id = %s
+                  AND used_at IS NULL
+                  AND expires_at >= %s
+                ORDER BY id DESC
+                LIMIT 1
+                """,
+                (user_id, datetime.now(tz=timezone.utc).replace(tzinfo=None)),
+            )
+            return cursor.fetchone()
+
+
+def mark_login_2fa_code_used(code_id: int) -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE login_2fa_codes
+                SET used_at = %s
+                WHERE id = %s
+                """,
+                (datetime.now(tz=timezone.utc).replace(tzinfo=None), code_id),
+            )
+        connection.commit()
+
+
+def clear_login_2fa_codes(user_id: int) -> None:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                UPDATE login_2fa_codes
+                SET used_at = %s
+                WHERE user_id = %s AND used_at IS NULL
+                """,
+                (datetime.now(tz=timezone.utc).replace(tzinfo=None), user_id),
+            )
         connection.commit()
 
 

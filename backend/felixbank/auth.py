@@ -57,8 +57,14 @@ def get_user_by_login(login: str) -> dict[str, Any] | None:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                SELECT id, login, password_hash, blocked_until
+                SELECT
+                    users.id,
+                    users.login,
+                    users.password_hash,
+                    users.blocked_until,
+                    COALESCE(user_profiles.email, '') AS email
                 FROM users
+                LEFT JOIN user_profiles ON user_profiles.user_id = users.id
                 WHERE login = %s
                 LIMIT 1
                 """,
