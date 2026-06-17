@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import pymysql
-from flask import Flask, Response, flash, redirect, render_template, request, session, url_for
+from flask import Flask, Response, flash, redirect, request, session, url_for
 
 from ..auth import current_user, get_user_by_login, login_required, verify_transfer_pin
 from ..config import (
@@ -14,7 +14,6 @@ from ..config import (
     ANTIFRAUD_MAX_TOTAL_UAH_PER_WINDOW,
     ANTIFRAUD_MAX_TRANSFERS_PER_WINDOW,
     ANTIFRAUD_WINDOW_SECONDS,
-    DEFAULT_TRANSFER_PIN,
     TRANSFER_DAILY_LIMIT_UAH,
     TRANSFER_MAX_AMOUNT_UAH,
     TRANSFER_MIN_AMOUNT_UAH,
@@ -23,19 +22,17 @@ from ..config import (
 from ..db import (
     create_audit_log,
     create_notification,
-    get_all_user_logins,
     get_balances,
     get_recent_sender_transfers,
     get_sender_daily_transfer_total,
     get_transfer_history_for_user,
     get_user_by_virtual_card_number,
-    get_user_profile,
     normalize_virtual_card_number,
     set_user_blocked_until,
     transfer_balance,
 )
 from ..utils import decimal_input, decimal_to_compact_str, decimal_to_str
-from .common import RATES_UAH_PER_1, avatar_url_for
+from .common import RATES_UAH_PER_1
 
 HISTORY_DIRECTION_VALUES = {"all", "incoming", "outgoing"}
 HISTORY_CURRENCY_VALUES = {"all", "UAH", "USD"}
@@ -107,11 +104,12 @@ def _history_url(
     currency: str | None = None,
     search: str | None = None,
     download_csv: bool = False,
+    extra_params: dict[str, str] | None = None,
 ) -> str:
     normalized_direction = filters["direction"] if direction is None else direction
     normalized_currency = filters["currency"] if currency is None else currency
     normalized_search = filters["search"] if search is None else search
-    params: dict[str, str] = {}
+    params: dict[str, str] = dict(extra_params or {})
 
     if normalized_direction and normalized_direction != "all":
         params["history_direction"] = normalized_direction
@@ -125,14 +123,18 @@ def _history_url(
     return url_for(endpoint, **params)
 
 
-def _history_links(endpoint: str, filters: dict[str, str]) -> dict[str, str]:
+def _history_links(
+    endpoint: str,
+    filters: dict[str, str],
+    extra_params: dict[str, str] | None = None,
+) -> dict[str, str]:
     return {
-        "reset": _history_url(endpoint, filters, direction="all", currency="all"),
-        "incoming": _history_url(endpoint, filters, direction="incoming"),
-        "outgoing": _history_url(endpoint, filters, direction="outgoing"),
-        "uah": _history_url(endpoint, filters, currency="UAH"),
-        "usd": _history_url(endpoint, filters, currency="USD"),
-        "csv": _history_url(endpoint, filters, download_csv=True),
+        "reset": _history_url(endpoint, filters, direction="all", currency="all", extra_params=extra_params),
+        "incoming": _history_url(endpoint, filters, direction="incoming", extra_params=extra_params),
+        "outgoing": _history_url(endpoint, filters, direction="outgoing", extra_params=extra_params),
+        "uah": _history_url(endpoint, filters, currency="UAH", extra_params=extra_params),
+        "usd": _history_url(endpoint, filters, currency="USD", extra_params=extra_params),
+        "csv": _history_url(endpoint, filters, download_csv=True, extra_params=extra_params),
     }
 
 
@@ -163,6 +165,10 @@ def _history_csv_response(history: list[dict[str, object]], user_id: int, filena
     )
 
 
+def _dashboard_redirect(section: str) -> Response:
+    return redirect(url_for("profile", section=section))
+
+
 def register_transfer_routes(app: Flask) -> None:
     @app.route("/profile/transfer", methods=["GET", "POST"])
     @login_required
@@ -170,9 +176,14 @@ def register_transfer_routes(app: Flask) -> None:
         user = current_user()
         assert user is not None
         user_id = int(user["id"])
+
+        if request.method == "GET" and request.args.get("download") != "csv":
+            return _dashboard_redirect("transfer-card")
+
         balances = get_balances(user_id)
         daily_transfer_total = get_sender_daily_transfer_total(user_id, "UAH")
         history_filters = _read_history_filters()
+        return_section = str(request.form.get("return_section") or "transfer-card").strip() or "transfer-card"
 
         if request.method == "POST":
             recipient_card_number_raw = (request.form.get("recipient_card_number") or "").strip()
@@ -185,32 +196,45 @@ def register_transfer_routes(app: Flask) -> None:
 
             if not recipient_card_number_raw:
                 flash("Введите номер виртуальной карты получателя.", "error")
+                return _dashboard_redirect(return_section)
             elif len(recipient_card_digits) != 16:
                 flash("Номер карты должен содержать 16 цифр.", "error")
+                return _dashboard_redirect(return_section)
             elif not normalized_card_number:
                 flash("Введите номер карты в формате 5412 1234 5678 9012.", "error")
+                return _dashboard_redirect(return_section)
             elif amount is None or amount <= 0:
                 flash("Введите корректную сумму больше нуля.", "error")
+                return _dashboard_redirect(return_section)
             elif amount < TRANSFER_MIN_AMOUNT_UAH:
                 flash("Минимальная сумма перевода — 10 UAH", "error")
+                return _dashboard_redirect(return_section)
             elif amount > TRANSFER_MAX_AMOUNT_UAH:
                 flash("Максимальная сумма перевода — 50 000 UAH", "error")
+                return _dashboard_redirect(return_section)
             elif amount > available_uah:
                 flash("Недостаточно средств для перевода.", "error")
+                return _dashboard_redirect(return_section)
             elif not transfer_confirmed:
                 flash("Подтвердите перевод в окне подтверждения.", "error")
+                return _dashboard_redirect(return_section)
             elif not TRANSFER_PIN_RE.fullmatch(transfer_pin):
                 flash("Введите 4-значный PIN для подтверждения перевода.", "error")
+                return _dashboard_redirect(return_section)
             elif not verify_transfer_pin(user_id, transfer_pin):
                 flash("Неверный PIN-код подтверждения.", "error")
+                return _dashboard_redirect(return_section)
             else:
                 recipient = get_user_by_virtual_card_number(normalized_card_number)
                 if recipient is None:
                     flash("Карта получателя не найдена.", "error")
+                    return _dashboard_redirect(return_section)
                 elif int(recipient["id"]) == user_id:
                     flash("Нельзя отправить перевод на свою карту.", "error")
+                    return _dashboard_redirect(return_section)
                 elif bool(recipient.get("is_blocked")):
                     flash("Карта получателя заблокирована.", "error")
+                    return _dashboard_redirect(return_section)
                 else:
                     projected_count, projected_total_uah = _recent_transfer_projection(
                         user_id,
@@ -224,7 +248,7 @@ def register_transfer_routes(app: Flask) -> None:
                         return _anti_fraud_block_response(user_id, projected_count, projected_total_uah)
                     if daily_transfer_total + amount > TRANSFER_DAILY_LIMIT_UAH:
                         flash("Дневной лимит переводов превышен", "error")
-                        return redirect(url_for("transfer"))
+                        return _dashboard_redirect(return_section)
                     try:
                         transfer_balance(
                             sender_id=user_id,
@@ -247,9 +271,10 @@ def register_transfer_routes(app: Flask) -> None:
                             f"Перевод выполнен: {decimal_to_str(amount)} UAH на карту {masked_card_number}.",
                             "ok",
                         )
-                        return redirect(url_for("transfer"))
+                        return _dashboard_redirect(return_section)
                     except ValueError:
                         flash("Недостаточно средств для перевода.", "error")
+                        return _dashboard_redirect(return_section)
                     except (pymysql.MySQLError, RuntimeError):
                         app.logger.exception(
                             "Database error during transfer from %s to card %s",
@@ -257,35 +282,16 @@ def register_transfer_routes(app: Flask) -> None:
                             normalized_card_number,
                         )
                         flash("Ошибка базы данных при выполнении перевода.", "error")
+                        return _dashboard_redirect(return_section)
 
         history = get_transfer_history_for_user(
             user_id,
-            limit=None if request.args.get("download") == "csv" else 50,
+            limit=None,
             direction=history_filters["direction"],
             currency_code=None if history_filters["currency"] == "all" else history_filters["currency"],
             search_query=history_filters["search"],
         )
-        if request.method == "GET" and request.args.get("download") == "csv":
-            return _history_csv_response(history, user_id, "felixbank-transfer-history")
-
-        user_profile = get_user_profile(user_id)
-        return render_template(
-            "transfer.html",
-            login=user["login"],
-            balances=balances,
-            history=history,
-            history_filters=history_filters,
-            history_links=_history_links("transfer", history_filters),
-            history_route_name="transfer",
-            user_id=user_id,
-            profile_data=user_profile,
-            avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
-            demo_transfer_pin=DEFAULT_TRANSFER_PIN,
-            transfer_min_amount_uah=TRANSFER_MIN_AMOUNT_UAH,
-            transfer_max_amount_uah=TRANSFER_MAX_AMOUNT_UAH,
-            transfer_daily_limit_uah=TRANSFER_DAILY_LIMIT_UAH,
-            daily_transfer_total_uah=daily_transfer_total,
-        )
+        return _history_csv_response(history, user_id, "felixbank-transfer-history")
 
     @app.route("/profile/transfer/international", methods=["GET", "POST"])
     @login_required
@@ -293,9 +299,13 @@ def register_transfer_routes(app: Flask) -> None:
         user = current_user()
         assert user is not None
         user_id = int(user["id"])
+
+        if request.method == "GET" and request.args.get("download") != "csv":
+            return _dashboard_redirect("transfer-international")
+
         balances = get_balances(user_id)
-        users = get_all_user_logins(exclude_user_id=user_id)
         history_filters = _read_history_filters()
+        return_section = str(request.form.get("return_section") or "transfer-international").strip() or "transfer-international"
 
         if request.method == "POST":
             recipient_login = (request.form.get("recipient_login") or "").strip()
@@ -304,16 +314,21 @@ def register_transfer_routes(app: Flask) -> None:
 
             if not recipient_login:
                 flash("Выберите получателя.", "error")
+                return _dashboard_redirect(return_section)
             elif recipient_login == user["login"]:
                 flash("Нельзя отправить перевод самому себе.", "error")
+                return _dashboard_redirect(return_section)
             elif currency_code not in balances:
                 flash("Выберите валюту списания.", "error")
+                return _dashboard_redirect(return_section)
             elif amount is None or amount <= 0:
                 flash("Введите корректную сумму больше нуля.", "error")
+                return _dashboard_redirect(return_section)
             else:
                 recipient = get_user_by_login(recipient_login)
                 if recipient is None:
                     flash("Получатель не найден.", "error")
+                    return _dashboard_redirect(return_section)
                 else:
                     projected_count, projected_total_uah = _recent_transfer_projection(
                         user_id,
@@ -347,9 +362,10 @@ def register_transfer_routes(app: Flask) -> None:
                             f"{currency_code} пользователю {recipient_login}.",
                             "ok",
                         )
-                        return redirect(url_for("transfer_international"))
+                        return _dashboard_redirect(return_section)
                     except ValueError:
                         flash("Недостаточно средств для перевода.", "error")
+                        return _dashboard_redirect(return_section)
                     except (pymysql.MySQLError, RuntimeError):
                         app.logger.exception(
                             "Database error during international transfer from %s to %s",
@@ -357,28 +373,13 @@ def register_transfer_routes(app: Flask) -> None:
                             recipient_login,
                         )
                         flash("Ошибка базы данных при международном переводе.", "error")
+                        return _dashboard_redirect(return_section)
 
         history = get_transfer_history_for_user(
             user_id,
-            limit=None if request.args.get("download") == "csv" else 50,
+            limit=None,
             direction=history_filters["direction"],
             currency_code=None if history_filters["currency"] == "all" else history_filters["currency"],
             search_query=history_filters["search"],
         )
-        if request.method == "GET" and request.args.get("download") == "csv":
-            return _history_csv_response(history, user_id, "felixbank-transfer-history")
-
-        user_profile = get_user_profile(user_id)
-        return render_template(
-            "transfer_international.html",
-            login=user["login"],
-            balances=balances,
-            history=history,
-            history_filters=history_filters,
-            history_links=_history_links("transfer_international", history_filters),
-            history_route_name="transfer_international",
-            user_id=user_id,
-            users=users,
-            profile_data=user_profile,
-            avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
-        )
+        return _history_csv_response(history, user_id, "felixbank-transfer-history")

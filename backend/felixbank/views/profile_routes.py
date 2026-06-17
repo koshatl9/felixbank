@@ -9,7 +9,13 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, ses
 from werkzeug.utils import secure_filename
 
 from ..auth import current_user, login_required
-from ..config import TWOPLACES
+from ..config import (
+    DEFAULT_TRANSFER_PIN,
+    TRANSFER_DAILY_LIMIT_UAH,
+    TRANSFER_MAX_AMOUNT_UAH,
+    TRANSFER_MIN_AMOUNT_UAH,
+    TWOPLACES,
+)
 from ..db import (
     create_notification,
     get_all_user_logins,
@@ -20,6 +26,8 @@ from ..db import (
     get_rates_history,
     get_rates_history_between_dates,
     get_or_create_virtual_card,
+    get_sender_daily_transfer_total,
+    get_transfer_history_for_user,
     get_user_profile,
     insert_rates_history,
     save_user_profile,
@@ -29,6 +37,17 @@ from ..db import (
 from ..rates import rates_payload
 from ..utils import decimal_input, decimal_to_str
 from .common import ALLOWED_AVATAR_EXT, RATES_UAH_PER_1, avatar_url_for
+from .transfer_routes import _history_csv_response, _history_links, _read_history_filters
+
+
+DASHBOARD_SECTIONS = {
+    "overview",
+    "profile",
+    "rates",
+    "transfer-card",
+    "transfer-international",
+    "virtual-card",
+}
 
 
 def _fallback_rates() -> list[dict[str, object]]:
@@ -79,6 +98,17 @@ def _parse_requested_chart_dates() -> tuple[date, date] | None:
     return start_date, end_date
 
 
+def _normalized_dashboard_section(raw_value: str | None, default: str = "overview") -> str:
+    candidate = str(raw_value or "").strip().lower()
+    if candidate in DASHBOARD_SECTIONS:
+        return candidate
+    return default
+
+
+def _dashboard_redirect(section: str, **params: str):
+    return redirect(url_for("profile", section=_normalized_dashboard_section(section), **params))
+
+
 def register_profile_routes(app: Flask) -> None:
     @app.route("/profile/", methods=["GET", "POST"])
     @login_required
@@ -89,21 +119,28 @@ def register_profile_routes(app: Flask) -> None:
 
         user = current_user()
         assert user is not None
+        user_id = int(user["id"])
+        active_section = _normalized_dashboard_section(request.args.get("section"), "overview")
 
         if request.method == "POST" and request.form.get("action") == "exchange":
+            return_section = _normalized_dashboard_section(request.form.get("return_section"), active_section)
             from_code = str(request.form.get("from") or "")
             to_code = str(request.form.get("to") or "")
             amount = decimal_input(request.form.get("amount") or "")
-            balances = get_balances(user["id"])
+            balances = get_balances(user_id)
 
             if from_code not in RATES_UAH_PER_1 or to_code not in RATES_UAH_PER_1:
                 flash("Выберите валюты обмена.", "error")
+                return _dashboard_redirect(return_section)
             elif from_code == to_code:
                 flash("Выберите разные валюты.", "error")
+                return _dashboard_redirect(return_section)
             elif amount is None or amount <= 0:
                 flash("Введите сумму больше нуля.", "error")
+                return _dashboard_redirect(return_section)
             elif balances.get(from_code, Decimal("0")) < amount:
                 flash("Недостаточно средств для обмена.", "error")
+                return _dashboard_redirect(return_section)
             else:
                 uah_amount = amount * RATES_UAH_PER_1[from_code]
                 to_amount = (uah_amount / RATES_UAH_PER_1[to_code]).quantize(
@@ -118,23 +155,60 @@ def register_profile_routes(app: Flask) -> None:
                     TWOPLACES,
                     rounding=ROUND_HALF_UP,
                 )
-                update_balances(user["id"], balances)
+                update_balances(user_id, balances)
                 flash(
                     f"Обмен выполнен: {decimal_to_str(amount)} {from_code} -> "
                     f"{decimal_to_str(to_amount)} {to_code}",
                     "ok",
                 )
-                return redirect(url_for("profile"))
+                return _dashboard_redirect(return_section)
 
-        balances = get_balances(user["id"])
-        profile_data = get_user_profile(int(user["id"]))
+        balances = get_balances(user_id)
+        profile_data = get_user_profile(user_id)
+        users = get_all_user_logins(exclude_user_id=user_id)
+        card = get_or_create_virtual_card(user_id, str(user["login"]))
+        card_blocked = bool(card.get("blocked"))
+        daily_transfer_total = get_sender_daily_transfer_total(user_id, "UAH")
+        payload = rates_payload()
+        fallback = _fallback_rates()
+        chart_start_date, chart_end_date = _default_chart_dates()
+        _store_rates_history_safely(_rates_for_chart_and_storage(payload))
+        history_filters = _read_history_filters()
+        history = get_transfer_history_for_user(
+            user_id,
+            limit=None if request.args.get("download") == "csv" else 50,
+            direction=history_filters["direction"],
+            currency_code=None if history_filters["currency"] == "all" else history_filters["currency"],
+            search_query=history_filters["search"],
+        )
+
+        if request.args.get("download") == "csv" and active_section in {"transfer-card", "transfer-international"}:
+            return _history_csv_response(history, user_id, "felixbank-transfer-history")
+
         return render_template(
-            "profile.html",
+            "dashboard.html",
+            active_section=active_section,
             login=user["login"],
             balances=balances,
             rates_uah_per_1=RATES_UAH_PER_1,
+            payload=payload,
+            fallback=fallback,
+            chart_default_start_date=chart_start_date.isoformat(),
+            chart_default_end_date=chart_end_date.isoformat(),
+            users=users,
+            card=card,
+            card_blocked=card_blocked,
+            history=history,
+            history_filters=history_filters,
+            transfer_card_history_links=_history_links("profile", history_filters, extra_params={"section": "transfer-card"}),
+            transfer_international_history_links=_history_links("profile", history_filters, extra_params={"section": "transfer-international"}),
             profile_data=profile_data,
             avatar_url=avatar_url_for(str(profile_data.get("avatar_filename") or "")),
+            demo_transfer_pin=DEFAULT_TRANSFER_PIN,
+            transfer_min_amount_uah=TRANSFER_MIN_AMOUNT_UAH,
+            transfer_max_amount_uah=TRANSFER_MAX_AMOUNT_UAH,
+            transfer_daily_limit_uah=TRANSFER_DAILY_LIMIT_UAH,
+            daily_transfer_total_uah=daily_transfer_total,
         )
 
     @app.get("/profile/index.html")
@@ -144,83 +218,56 @@ def register_profile_routes(app: Flask) -> None:
     @app.route("/profile/details", methods=["GET", "POST"])
     @login_required
     def profile_details():
+        if request.method == "GET":
+            return _dashboard_redirect("profile")
+
         user = current_user()
         assert user is not None
         user_id = int(user["id"])
-        profile_data = get_user_profile(user_id)
+        return_section = _normalized_dashboard_section(request.form.get("return_section"), "profile")
+        first_name = (request.form.get("first_name") or "").strip()
+        last_name = (request.form.get("last_name") or "").strip()
+        age_raw = (request.form.get("age") or "").strip()
+        age: int | None = None
 
-        if request.method == "POST":
-            first_name = (request.form.get("first_name") or "").strip()
-            last_name = (request.form.get("last_name") or "").strip()
-            age_raw = (request.form.get("age") or "").strip()
-            age: int | None = None
+        if age_raw:
+            try:
+                age = int(age_raw)
+            except ValueError:
+                flash("Возраст должен быть числом.", "error")
+                return _dashboard_redirect(return_section)
+            if age < 1 or age > 120:
+                flash("Возраст должен быть в диапазоне 1-120.", "error")
+                return _dashboard_redirect(return_section)
 
-            if age_raw:
-                try:
-                    age = int(age_raw)
-                except ValueError:
-                    flash("Возраст должен быть числом.", "error")
-                    return redirect(url_for("profile_details"))
-                if age < 1 or age > 120:
-                    flash("Возраст должен быть в диапазоне 1-120.", "error")
-                    return redirect(url_for("profile_details"))
+        avatar_file = request.files.get("avatar")
+        avatar_filename_to_save: str | None = None
+        if avatar_file and avatar_file.filename:
+            safe_name = secure_filename(avatar_file.filename)
+            ext = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
+            if ext not in ALLOWED_AVATAR_EXT:
+                flash("Разрешены только изображения: png, jpg, jpeg, webp, gif.", "error")
+                return _dashboard_redirect(return_section)
+            avatars_dir = Path(app.static_folder or "") / "assets" / "avatars"
+            avatars_dir.mkdir(parents=True, exist_ok=True)
+            avatar_filename_to_save = f"user_{user_id}_{uuid4().hex[:10]}.{ext}"
+            avatar_file.save(avatars_dir / avatar_filename_to_save)
 
-            avatar_file = request.files.get("avatar")
-            avatar_filename_to_save: str | None = None
-            if avatar_file and avatar_file.filename:
-                safe_name = secure_filename(avatar_file.filename)
-                ext = safe_name.rsplit(".", 1)[-1].lower() if "." in safe_name else ""
-                if ext not in ALLOWED_AVATAR_EXT:
-                    flash("Разрешены только изображения: png, jpg, jpeg, webp, gif.", "error")
-                    return redirect(url_for("profile_details"))
-                avatars_dir = Path(app.static_folder or "") / "assets" / "avatars"
-                avatars_dir.mkdir(parents=True, exist_ok=True)
-                avatar_filename_to_save = f"user_{user_id}_{uuid4().hex[:10]}.{ext}"
-                avatar_file.save(avatars_dir / avatar_filename_to_save)
-
-            save_user_profile(
-                user_id=user_id,
-                first_name=first_name,
-                last_name=last_name,
-                age=age,
-                avatar_filename=avatar_filename_to_save,
-            )
-            flash("Профиль обновлен.", "ok")
-            return redirect(url_for("profile_details"))
-
-        balances = get_balances(user_id)
-        users = get_all_user_logins(exclude_user_id=user_id)
-        profile_data = get_user_profile(user_id)
-        return render_template(
-            "profile_details.html",
-            login=user["login"],
-            balances=balances,
-            users=users,
-            profile_data=profile_data,
-            avatar_url=avatar_url_for(str(profile_data.get("avatar_filename") or "")),
+        save_user_profile(
+            user_id=user_id,
+            first_name=first_name,
+            last_name=last_name,
+            age=age,
+            avatar_filename=avatar_filename_to_save,
         )
+        flash("Профиль обновлен.", "ok")
+        return _dashboard_redirect(return_section)
 
     @app.get("/profile/rates")
     @app.get("/profile/rates.php")
     @login_required
     def rates():
-        user = current_user()
-        assert user is not None
-        user_profile = get_user_profile(int(user["id"]))
-        payload = rates_payload()
-        fallback = _fallback_rates()
-        chart_start_date, chart_end_date = _default_chart_dates()
-        _store_rates_history_safely(_rates_for_chart_and_storage(payload))
-        return render_template(
-            "rates.html",
-            login=user["login"],
-            payload=payload,
-            fallback=fallback,
-            chart_default_start_date=chart_start_date.isoformat(),
-            chart_default_end_date=chart_end_date.isoformat(),
-            profile_data=user_profile,
-            avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
-        )
+        return _dashboard_redirect("rates")
 
     @app.get("/profile/rates/data")
     @login_required
@@ -326,19 +373,7 @@ def register_profile_routes(app: Flask) -> None:
     @app.get("/profile/virtual-card")
     @login_required
     def virtual_card():
-        user = current_user()
-        assert user is not None
-        card = get_or_create_virtual_card(int(user["id"]), str(user["login"]))
-        card_blocked = bool(card.get("blocked"))
-        user_profile = get_user_profile(int(user["id"]))
-        return render_template(
-            "virtual_card.html",
-            login=user["login"],
-            card=card,
-            card_blocked=card_blocked,
-            profile_data=user_profile,
-            avatar_url=avatar_url_for(str(user_profile.get("avatar_filename") or "")),
-        )
+        return _dashboard_redirect("virtual-card")
 
     @app.post("/profile/virtual-card/lock")
     @login_required
