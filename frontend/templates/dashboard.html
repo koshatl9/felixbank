@@ -44,6 +44,13 @@
             <a class="menu__subitem" href="{{ url_for('profile', section='profile') }}" data-dashboard-target="profile">Профиль</a>
           </div>
         </div>
+        <a class="menu__item" href="{{ url_for('profile', section='goals') }}" data-dashboard-target="goals">
+          <i>🎯</i>
+          <div>
+            <div>Цели</div>
+            <div class="muted" style="font-size: 12px;">Накопления и прогресс</div>
+          </div>
+        </a>
         <a class="menu__item" href="{{ url_for('profile', section='rates') }}" data-dashboard-target="rates">
           <i>💱</i>
           <div>
@@ -120,6 +127,10 @@
 
         <section class="dashboard-screen" data-dashboard-section="profile" {% if active_section != 'profile' %}hidden{% endif %}>
           {% include "partials/dashboard_profile_section.html" %}
+        </section>
+
+        <section class="dashboard-screen" data-dashboard-section="goals" {% if active_section != 'goals' %}hidden{% endif %}>
+          {% include "partials/dashboard_goals_section.html" %}
         </section>
 
         <section class="dashboard-screen" data-dashboard-section="rates" {% if active_section != 'rates' %}hidden{% endif %}>

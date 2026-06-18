@@ -89,3 +89,54 @@ CREATE TABLE IF NOT EXISTS login_2fa_codes (
         ON DELETE CASCADE,
     INDEX idx_login_2fa_codes_user_created (user_id, created_at)
 );
+
+CREATE TABLE IF NOT EXISTS savings_goals (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    title VARCHAR(120) NOT NULL,
+    description VARCHAR(255) NOT NULL DEFAULT '',
+    theme_key VARCHAR(24) NOT NULL DEFAULT 'aurora',
+    currency_code CHAR(3) NOT NULL DEFAULT 'UAH',
+    target_amount DECIMAL(12, 2) NOT NULL,
+    saved_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    target_date DATE NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_savings_goals_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+    INDEX idx_savings_goals_user_created (user_id, created_at)
+);
+
+CREATE TABLE IF NOT EXISTS savings_settings (
+    user_id INT PRIMARY KEY,
+    enabled TINYINT(1) NOT NULL DEFAULT 0,
+    auto_percent DECIMAL(5, 2) NOT NULL DEFAULT 10.00,
+    target_goal_id BIGINT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_savings_settings_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_savings_settings_goal
+        FOREIGN KEY (target_goal_id) REFERENCES savings_goals(id)
+        ON DELETE SET NULL,
+    INDEX idx_savings_settings_goal (target_goal_id)
+);
+
+CREATE TABLE IF NOT EXISTS savings_goal_events (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    goal_id BIGINT NOT NULL,
+    user_id INT NOT NULL,
+    event_type VARCHAR(16) NOT NULL DEFAULT 'topup',
+    amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_savings_goal_events_goal
+        FOREIGN KEY (goal_id) REFERENCES savings_goals(id)
+        ON DELETE CASCADE,
+    CONSTRAINT fk_savings_goal_events_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE,
+    INDEX idx_savings_goal_events_goal_created (goal_id, created_at),
+    INDEX idx_savings_goal_events_user_created (user_id, created_at)
+);

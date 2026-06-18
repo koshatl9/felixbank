@@ -2,7 +2,7 @@
   <div class="panel-heading">
     <div>
       <div class="section-label">История</div>
-      <h3>Последние переводы</h3>
+      <h3>Последние операции</h3>
     </div>
   </div>
 
@@ -51,7 +51,7 @@
           type="search"
           name="history_search"
           value="{{ history_filters.search }}"
-          placeholder="Поиск по пользователям"
+          placeholder="Поиск по пользователям или цели"
         >
         <button class="secondary-btn" type="submit">Найти</button>
       </form>
@@ -65,9 +65,10 @@
       <thead>
         <tr>
           <th>Дата</th>
-          <th>Отправитель</th>
-          <th>Получатель</th>
+          <th>Источник</th>
+          <th>Получатель / цель</th>
           <th>Сумма</th>
+          <th>Тип</th>
           <th>Статус</th>
         </tr>
       </thead>
@@ -78,12 +79,11 @@
           <td>{{ t.sender_login }}</td>
           <td>{{ t.recipient_login }}</td>
           <td>{{ t.amount|money }} {{ t.currency_code }}</td>
+          <td>{{ t.operation_label or 'Перевод' }}</td>
           <td>
-            {% if t.sender_id == user_id %}
-            <span class="status-pill status-pill--out">Исходящий</span>
-            {% else %}
-            <span class="status-pill status-pill--in">Входящий</span>
-            {% endif %}
+            <span class="status-pill {{ t.status_class or ('status-pill--out' if t.sender_id == user_id else 'status-pill--in') }}">
+              {{ t.status_label or ('Исходящий' if t.sender_id == user_id else 'Входящий') }}
+            </span>
           </td>
         </tr>
         {% endfor %}
@@ -93,6 +93,6 @@
   {% elif history_filters.direction != 'all' or history_filters.currency != 'all' or history_filters.search %}
   <p class="muted">По выбранным фильтрам и поиску ничего не найдено.</p>
   {% else %}
-  <p class="muted">Пока нет переводов. После первой операции запись появится здесь.</p>
+  <p class="muted">Пока нет операций. После первого перевода или пополнения цели запись появится здесь.</p>
   {% endif %}
 </article>
