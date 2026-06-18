@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Профиль</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -43,7 +44,7 @@
           <i>💱</i>
           <div>
             <div>Курсы валют</div>
-            <div class="muted" style="font-size: 12px;">На текущее время</div>
+            <div class="muted" style="font-size: 12px;">Актуальные курсы</div>
           </div>
         </a>
         <div class="menu__group">
@@ -51,7 +52,7 @@
             <i>💳</i>
             <div>
               <div>Переводы</div>
-              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+              <div class="muted" style="font-size: 12px;">Карты и переводы</div>
             </div>
           </a>
           <div class="menu__submenu">
@@ -75,7 +76,7 @@
         </a>
       </nav>
 
-      <div class="support-card">
+      <div class="support-card support-card--success">
         <div class="support-card__label">Статус</div>
         <h2>Вы вошли</h2>
         <p>Эта страница защищена сессией. Если удалить куки или сессию, произойдет возврат на страницу входа.</p>
@@ -91,6 +92,7 @@
           <p class="hero__text">Профиль пользователя. Здесь можно просматривать баланс, перейти к редактированию профиля, переводам и виртуальной карте.</p>
         </div>
         <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
           <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
           <button class="ghost-btn" type="button" title="Выйти" onclick="location.href='{{ url_for('profile', logout=1) }}'"><i>⎋</i></button>
         </div>
@@ -98,13 +100,13 @@
 
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
-          {% for category, message in messages %}
-            <section style="margin-top: 18px;">
-              <div class="panel" style="padding: 14px 16px; border-radius: 18px; {{ 'background: rgba(255, 159, 199, 0.10);' if category == 'error' else 'background: rgba(126, 247, 184, 0.10);' }}">
+          <section class="flash-stack">
+            {% for category, message in messages %}
+              <div class="flash-banner {{ 'flash-banner--error' if category == 'error' else 'flash-banner--ok' }}">
                 <strong>{{ message }}</strong>
               </div>
-            </section>
-          {% endfor %}
+            {% endfor %}
+          </section>
         {% endif %}
       {% endwith %}
 
@@ -135,10 +137,7 @@
               <div class="section-label">Баланс</div>
               <h3>Ваши средства</h3>
             </div>
-            <a
-              href="{{ url_for('profile') }}"
-              style="display:inline-flex; align-items:center; justify-content:center; padding: 10px 14px; border-radius: 16px; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: var(--accent-light); text-decoration:none; white-space: nowrap;"
-            >Обновить</a>
+            <a href="{{ url_for('profile') }}">Обновить</a>
           </div>
           <div class="balance-stats">
             <div>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Виртуальная карта</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
   <script src="{{ url_for('serve_static_file', filename='js/virtual_card.js') }}" defer></script>
 </head>
 <body>
@@ -44,7 +45,7 @@
           <i>💱</i>
           <div>
             <div>Курсы валют</div>
-            <div class="muted" style="font-size: 12px;">На текущее время</div>
+            <div class="muted" style="font-size: 12px;">Актуальные курсы</div>
           </div>
         </a>
         <div class="menu__group">
@@ -52,7 +53,7 @@
             <i>💳</i>
             <div>
               <div>Переводы</div>
-              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+              <div class="muted" style="font-size: 12px;">Карты и переводы</div>
             </div>
           </a>
           <div class="menu__submenu">
@@ -63,7 +64,7 @@
         <a class="menu__item menu__item--active" href="{{ url_for('virtual_card') }}">
           <i>💜</i>
           <div>
-            <div>Виртуальная карта ★</div>
+            <div>Виртуальная карта</div>
             <div class="muted" style="font-size: 12px;">Реквизиты карты</div>
           </div>
         </a>
@@ -81,16 +82,19 @@
       <section class="hero">
         <div>
           <div class="hero__eyebrow">Новая вкладка</div>
-          <h2>Виртуальная карта ★</h2>
+          <h2>Виртуальная карта</h2>
           <p class="hero__text">Ниже отображаются полные реквизиты вашей виртуальной карты для онлайн-платежей.</p>
         </div>
-        <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
+        <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
+        </div>
       </section>
 
       <section class="content-grid">
         <article class="panel bank-card" style="grid-column: span 8;">
           <div class="card-chip"></div>
-          <div class="card-number">{{ card.number }}</div>
+          <div class="card-number card-number-reveal" data-card-number="{{ card.number }}"></div>
           <div class="bank-card__footer">
             <div>
               <span>Держатель</span>
@@ -105,6 +109,21 @@
               <strong class="cvv-reveal" data-cvv="{{ card.cvv }}">**</strong>
             </div>
           </div>
+          <div class="card-lock">
+            <button
+              type="button"
+              class="primary-btn card-lock__button {% if card_blocked %}is-locked{% endif %}"
+              id="card-lock-toggle"
+              aria-pressed="{{ 'true' if card_blocked else 'false' }}"
+              data-blocked="{{ 'true' if card_blocked else 'false' }}"
+              data-lock-url="{{ url_for('virtual_card_lock') }}"
+            >
+              {{ "Разблокировать карту" if card_blocked else "Заблокировать карту" }}
+            </button>
+            <p class="card-lock__hint" id="card-lock-hint">
+              {{ "Карта заблокирована. Вы всегда можете её разблокировать." if card_blocked else "Вы всегда можете её разблокировать." }}
+            </p>
+          </div>
         </article>
 
         <article class="panel profile-card" style="grid-column: span 4;">
@@ -117,7 +136,7 @@
           <div class="profile-meta" style="grid-template-columns: 1fr; gap: 12px;">
             <div>
               <span>номер карты</span>
-              <strong>{{ card.number }}</strong>
+              <strong class="card-number-reveal" data-card-number="{{ card.number }}"></strong>
             </div>
             <div>
               <span>Срок действия</span>

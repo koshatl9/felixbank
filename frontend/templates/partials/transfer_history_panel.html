@@ -1,0 +1,98 @@
+<article class="panel limits-card">
+  <div class="panel-heading">
+    <div>
+      <div class="section-label">История</div>
+      <h3>Последние операции</h3>
+    </div>
+  </div>
+
+  <div class="history-toolbar">
+    <div class="history-toolbar__filters">
+      <a
+        class="history-filter-chip {{ 'history-filter-chip--active' if history_filters.direction == 'all' and history_filters.currency == 'all' else '' }}"
+        href="{{ history_links.reset }}"
+      >
+        Все
+      </a>
+      <a
+        class="history-filter-chip {{ 'history-filter-chip--active' if history_filters.direction == 'incoming' else '' }}"
+        href="{{ history_links.incoming }}"
+      >
+        Входящие
+      </a>
+      <a
+        class="history-filter-chip {{ 'history-filter-chip--active' if history_filters.direction == 'outgoing' else '' }}"
+        href="{{ history_links.outgoing }}"
+      >
+        Исходящие
+      </a>
+      <a
+        class="history-filter-chip {{ 'history-filter-chip--active' if history_filters.currency == 'UAH' else '' }}"
+        href="{{ history_links.uah }}"
+      >
+        UAH
+      </a>
+      <a
+        class="history-filter-chip {{ 'history-filter-chip--active' if history_filters.currency == 'USD' else '' }}"
+        href="{{ history_links.usd }}"
+      >
+        USD
+      </a>
+    </div>
+
+    <div class="history-toolbar__actions">
+      <form class="history-search-form" method="get" action="{{ url_for(history_route_name) }}">
+        {% if history_section_id %}
+        <input type="hidden" name="section" value="{{ history_section_id }}">
+        {% endif %}
+        <input type="hidden" name="history_direction" value="{{ history_filters.direction }}">
+        <input type="hidden" name="history_currency" value="{{ history_filters.currency }}">
+        <input
+          type="search"
+          name="history_search"
+          value="{{ history_filters.search }}"
+          placeholder="Поиск по пользователям или цели"
+        >
+        <button class="secondary-btn" type="submit">Найти</button>
+      </form>
+      <a class="secondary-btn history-download-btn" href="{{ history_links.csv }}">Скачать CSV</a>
+    </div>
+  </div>
+
+  {% if history %}
+  <div style="overflow-x: auto;">
+    <table class="transfer-table">
+      <thead>
+        <tr>
+          <th>Дата</th>
+          <th>Источник</th>
+          <th>Получатель / цель</th>
+          <th>Сумма</th>
+          <th>Тип</th>
+          <th>Статус</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in history %}
+        <tr>
+          <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '-' }}</td>
+          <td>{{ t.sender_login }}</td>
+          <td>{{ t.recipient_login }}</td>
+          <td>{{ t.amount|money }} {{ t.currency_code }}</td>
+          <td>{{ t.operation_label or 'Перевод' }}</td>
+          <td>
+            <span class="status-pill {{ t.status_class or ('status-pill--out' if t.sender_id == user_id else 'status-pill--in') }}">
+              {{ t.status_label or ('Исходящий' if t.sender_id == user_id else 'Входящий') }}
+            </span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif history_filters.direction != 'all' or history_filters.currency != 'all' or history_filters.search %}
+  <p class="muted">По выбранным фильтрам и поиску ничего не найдено.</p>
+  {% else %}
+  <p class="muted">Пока нет операций. После первого перевода или пополнения цели запись появится здесь.</p>
+  {% endif %}
+</article>

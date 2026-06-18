@@ -1,0 +1,127 @@
+<section class="hero">
+  <div>
+    <div class="hero__eyebrow">Перевод на карту</div>
+    <h2>По номеру виртуальной карты</h2>
+    <p class="hero__text">Введите номер виртуальной карты получателя и сумму. Перевод выполняется сразу после подтверждения.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <article class="panel actions-card" style="grid-column: span 7;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Форма</div>
+        <h3>Новый перевод</h3>
+      </div>
+    </div>
+
+    <form
+      id="transfer-form"
+      method="post"
+      action="{{ url_for('transfer') }}"
+      style="display: grid; gap: 12px;"
+      data-available-balance="{{ balances['UAH'] }}"
+      data-transfer-min="{{ transfer_min_amount_uah }}"
+      data-transfer-max="{{ transfer_max_amount_uah }}"
+      data-transfer-daily-limit="{{ transfer_daily_limit_uah }}"
+      data-transfer-daily-total="{{ daily_transfer_total_uah }}"
+    >
+      <input type="hidden" name="return_section" value="transfer-card">
+      <input type="hidden" name="transfer_confirmed" value="0" id="transfer-confirmed-input">
+      <input type="hidden" name="transfer_pin" value="" id="transfer-pin-hidden">
+      <div id="transfer-client-error" class="flash-banner flash-banner--error" hidden></div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Номер виртуальной карты</label>
+        <input
+          name="recipient_card_number"
+          inputmode="numeric"
+          autocomplete="cc-number"
+          placeholder="5412 1234 5678 9012"
+          value="{{ request.form.get('recipient_card_number', '') }}"
+          required
+        >
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Сумма (UAH)</label>
+        <input name="amount" inputmode="decimal" placeholder="0.00" value="{{ request.form.get('amount', '') }}" required>
+      </div>
+
+      <button class="primary-btn" type="submit">Отправить перевод</button>
+    </form>
+
+    <div class="modal-backdrop" id="transfer-confirm-modal" hidden>
+      <div class="modal-card transfer-modal" role="dialog" aria-modal="true" aria-labelledby="transfer-confirm-title">
+        <div class="section-label">Подтверждение</div>
+        <h3 id="transfer-confirm-title">Подтвердите перевод</h3>
+        <div class="transfer-review">
+          <div class="transfer-review__row">
+            <span>Карта получателя</span>
+            <strong id="transfer-confirm-card">**** **** **** 0000</strong>
+          </div>
+          <div class="transfer-review__row">
+            <span>Сумма</span>
+            <strong id="transfer-confirm-amount">0 UAH</strong>
+          </div>
+        </div>
+
+        <div class="transfer-pin-panel">
+          <label class="muted" style="font-size: 13px;" for="transfer-pin-modal">Введите 4-значный PIN</label>
+          <input
+            id="transfer-pin-modal"
+            type="password"
+            inputmode="numeric"
+            maxlength="4"
+            placeholder="••••"
+            autocomplete="one-time-code"
+          >
+          <p class="muted transfer-pin-hint">Демо PIN для подтверждения: <strong>{{ demo_transfer_pin }}</strong></p>
+          <div id="transfer-modal-error" class="flash-banner flash-banner--error" hidden></div>
+        </div>
+
+        <div class="transfer-modal__actions">
+          <button type="button" class="secondary-btn" id="transfer-cancel-button">Отмена</button>
+          <button type="button" class="primary-btn" id="transfer-confirm-button">Подтвердить</button>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel profile-card" style="grid-column: span 5;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Ваш баланс</div>
+        <h3>Перед отправкой</h3>
+      </div>
+    </div>
+    <div class="balance-stats" style="margin-top: 0;">
+      <div>
+        <span>Доступно UAH</span>
+        <strong>{{ balances['UAH']|money }}</strong>
+      </div>
+      <div>
+        <span>Доступно USD</span>
+        <strong>{{ balances['USD']|money }}</strong>
+      </div>
+    </div>
+    <div style="margin-top: 16px;">
+      <div class="section-label">Подсказка</div>
+      <p class="muted" style="line-height: 1.7;">
+        Введите номер карты в формате <strong>5412 1234 5678 9012</strong>.
+        Перевод возможен только на существующую виртуальную карту FelixBank.
+        Минимум: <strong>{{ transfer_min_amount_uah|money }} UAH</strong>.
+        Максимум: <strong>{{ transfer_max_amount_uah|money }} UAH</strong>.
+      </p>
+      <p class="muted" style="line-height: 1.7; margin-top: 10px;">
+        Сегодня уже отправлено: <strong>{{ daily_transfer_total_uah|money }} UAH</strong> из
+        <strong>{{ transfer_daily_limit_uah|money }} UAH</strong>.
+      </p>
+    </div>
+  </article>
+
+  {% set history_links = transfer_card_history_links %}
+  {% set history_route_name = 'profile' %}
+  {% set history_section_id = 'transfer-card' %}
+  {% include "partials/transfer_history_panel.html" %}
+</section>

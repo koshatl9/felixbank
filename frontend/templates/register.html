@@ -14,7 +14,7 @@
         <img src="{{ url_for('serve_assets', filename='mascot.png') }}" alt="Mascot" loading="lazy">
       </div>
       <h1>Регистрация</h1>
-      <p class="hint">Логин: 3-32 символа (латиница/цифры/._-). Пароль: минимум 8 символов.</p>
+      <p class="hint">Логин: 3-32 символа (латиница/цифры/._-). Пароль: минимум 8 символов. Email нужен для кода входа.</p>
 
       {% if error %}
         <div class="msg" role="alert">{{ error }}</div>
@@ -24,6 +24,11 @@
         <label for="login">Логин</label>
         <div class="row row--single">
           <input id="login" name="login" type="text" required autocomplete="username">
+        </div>
+
+        <label for="email">Email</label>
+        <div class="row row--single">
+          <input id="email" name="email" type="email" required autocomplete="email">
         </div>
 
         <label for="password">Пароль</label>

@@ -1,0 +1,66 @@
+<section class="hero">
+  <div>
+    <div class="hero__eyebrow">Новая вкладка</div>
+    <h2>Виртуальная карта</h2>
+    <p class="hero__text">Ниже отображаются полные реквизиты вашей виртуальной карты для онлайн-платежей.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <article class="panel bank-card" style="grid-column: span 8;">
+    <div class="card-chip"></div>
+    <div class="card-number card-number-reveal" data-card-number="{{ card.number }}"></div>
+    <div class="bank-card__footer">
+      <div>
+        <span>Держатель</span>
+        <strong>{{ card.holder }}</strong>
+      </div>
+      <div>
+        <span>Срок действия</span>
+        <strong>{{ card.expiry }}</strong>
+      </div>
+      <div>
+        <span>CVV</span>
+        <strong class="cvv-reveal" data-cvv="{{ card.cvv }}">**</strong>
+      </div>
+    </div>
+    <div class="card-lock">
+      <button
+        type="button"
+        class="primary-btn card-lock__button {% if card_blocked %}is-locked{% endif %}"
+        id="card-lock-toggle"
+        aria-pressed="{{ 'true' if card_blocked else 'false' }}"
+        data-blocked="{{ 'true' if card_blocked else 'false' }}"
+        data-lock-url="{{ url_for('virtual_card_lock') }}"
+      >
+        {{ "Разблокировать карту" if card_blocked else "Заблокировать карту" }}
+      </button>
+      <p class="card-lock__hint" id="card-lock-hint">
+        {{ "Карта заблокирована. Вы всегда можете её разблокировать." if card_blocked else "Вы всегда можете её разблокировать." }}
+      </p>
+    </div>
+  </article>
+
+  <article class="panel profile-card" style="grid-column: span 4;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Данные карты</div>
+        <h3>Полные реквизиты</h3>
+      </div>
+    </div>
+    <div class="profile-meta" style="grid-template-columns: 1fr; gap: 12px;">
+      <div>
+        <span>номер карты</span>
+        <strong class="card-number-reveal" data-card-number="{{ card.number }}"></strong>
+      </div>
+      <div>
+        <span>Срок действия</span>
+        <strong>{{ card.expiry }}</strong>
+      </div>
+      <div>
+        <span>CVV код</span>
+        <strong class="cvv-reveal" data-cvv="{{ card.cvv }}">**</strong>
+      </div>
+    </div>
+  </article>
+</section>

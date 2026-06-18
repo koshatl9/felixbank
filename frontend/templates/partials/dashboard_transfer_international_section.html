@@ -1,0 +1,70 @@
+<section class="hero">
+  <div>
+    <div class="hero__eyebrow">Подвкладка переводов</div>
+    <h2>Международный перевод</h2>
+    <p class="hero__text">Выберите получателя, валюту и сумму. Получатель получит средства в той же валюте.</p>
+  </div>
+</section>
+
+<section class="content-grid">
+  <article class="panel actions-card" style="grid-column: span 7;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Форма</div>
+        <h3>Новый международный перевод</h3>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('transfer_international') }}" style="display: grid; gap: 12px;">
+      <input type="hidden" name="return_section" value="transfer-international">
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Получатель</label>
+        <select name="recipient_login" required>
+          <option value="" selected disabled>Выберите пользователя</option>
+          {% for user_login in users %}
+          <option value="{{ user_login }}">{{ user_login }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Валюта списания</label>
+        <select name="currency_code" required>
+          {% for code, value in balances.items() %}
+          <option value="{{ code }}">{{ code }} (доступно: {{ value|money }})</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Сумма</label>
+        <input name="amount" inputmode="decimal" placeholder="0.00" required>
+      </div>
+
+      <button class="primary-btn" type="submit">Отправить международный перевод</button>
+    </form>
+  </article>
+
+  <article class="panel profile-card" style="grid-column: span 5;">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Баланс</div>
+        <h3>Доступные валюты</h3>
+      </div>
+    </div>
+    <div class="balance-stats" style="margin-top: 0;">
+      {% for code, value in balances.items() %}
+      <div>
+        <span>{{ code }}</span>
+        <strong>{{ value|money }}</strong>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+
+  {% set history_links = transfer_international_history_links %}
+  {% set history_route_name = 'profile' %}
+  {% set history_section_id = 'transfer-international' %}
+  {% include "partials/transfer_history_panel.html" %}
+</section>

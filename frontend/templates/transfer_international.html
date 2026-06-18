@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Международный перевод</title>
   <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/profile.css') }}">
+  <script src="{{ url_for('serve_static_file', filename='js/notifications.js') }}" defer></script>
 </head>
 <body>
   <div class="page-shell">
@@ -40,7 +41,7 @@
           <i>💱</i>
           <div>
             <div>Курсы валют</div>
-            <div class="muted" style="font-size: 12px;">На текущее время</div>
+            <div class="muted" style="font-size: 12px;">Актуальные курсы</div>
           </div>
         </a>
         <div class="menu__group menu__group--open">
@@ -48,7 +49,7 @@
             <i>💳</i>
             <div>
               <div>Переводы</div>
-              <div class="muted" style="font-size: 12px;">Между пользователями</div>
+              <div class="muted" style="font-size: 12px;">Карты и переводы</div>
             </div>
           </a>
           <div class="menu__submenu">
@@ -72,7 +73,7 @@
         </a>
       </nav>
 
-      <div class="support-card">
+      <div class="support-card support-card--warning">
         <div class="support-card__label">Международный перевод</div>
         <h2>Доступные валюты</h2>
         <p>Можно отправить любую валюту, которая уже есть на вашем балансе.</p>
@@ -87,18 +88,21 @@
           <h2>Международный перевод</h2>
           <p class="hero__text">Выберите получателя, валюту и сумму. Получатель получит средства в той же валюте.</p>
         </div>
+        <div class="hero__actions">
+          {% include "partials/notifications_bell.html" %}
+          <img class="hero-avatar" src="{{ avatar_url }}" alt="Ваш аватар">
+        </div>
       </section>
 
       {% with messages = get_flashed_messages(with_categories=true) %}
       {% if messages %}
-      {% for category, message in messages %}
-      <section style="margin-top: 18px;">
-        <div class="panel"
-          style="padding: 14px 16px; border-radius: 18px; {{ 'background: rgba(255, 159, 199, 0.10);' if category == 'error' else 'background: rgba(126, 247, 184, 0.10);' }}">
+      <section class="flash-stack">
+        {% for category, message in messages %}
+        <div class="flash-banner {{ 'flash-banner--error' if category == 'error' else 'flash-banner--ok' }}">
           <strong>{{ message }}</strong>
         </div>
+        {% endfor %}
       </section>
-      {% endfor %}
       {% endif %}
       {% endwith %}
 
@@ -157,48 +161,7 @@
           </div>
         </article>
 
-        <article class="panel limits-card">
-          <div class="panel-heading">
-            <div>
-              <div class="section-label">История</div>
-              <h3>Последние переводы</h3>
-            </div>
-          </div>
-          {% if history %}
-          <div style="overflow-x: auto;">
-            <table class="transfer-table">
-              <thead>
-                <tr>
-                  <th>Дата</th>
-                  <th>Отправитель</th>
-                  <th>Получатель</th>
-                  <th>Сумма</th>
-                  <th>Статус</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for t in history %}
-                <tr>
-                  <td>{{ t.created_at.strftime('%d.%m.%Y %H:%M') if t.created_at else '-' }}</td>
-                  <td>{{ t.sender_login }}</td>
-                  <td>{{ t.recipient_login }}</td>
-                  <td>{{ t.amount|money }} {{ t.currency_code }}</td>
-                  <td>
-                    {% if t.sender_id == user_id %}
-                    <span class="status-pill status-pill--out">Исходящий</span>
-                    {% else %}
-                    <span class="status-pill status-pill--in">Входящий</span>
-                    {% endif %}
-                  </td>
-                </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-          {% else %}
-          <p class="muted">Пока нет переводов. После первой операции запись появится здесь.</p>
-          {% endif %}
-        </article>
+        {% include "partials/transfer_history_panel.html" %}
       </section>
     </main>
   </div>

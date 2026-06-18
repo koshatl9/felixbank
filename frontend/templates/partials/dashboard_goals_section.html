@@ -1,0 +1,402 @@
+<section class="hero hero--goals">
+  <div>
+    <div class="hero__eyebrow">Цели накопления</div>
+    <h2>Крупные покупки, мечты и финансовые планы</h2>
+    <p class="hero__text">
+      Создавайте несколько целей, пополняйте их прямо с UAH-баланса и следите за прогрессом в одном месте.
+      FelixBank превращает накопления в понятный личный roadmap с визуальным прогрессом и реальными лимитами.
+    </p>
+  </div>
+
+  {% if goals_summary.featured_goal %}
+    {% set spotlight = goals_summary.featured_goal %}
+    <div
+      class="goals-hero-spotlight"
+      style="--goal-accent: {{ spotlight.theme.accent }}; --goal-accent-strong: {{ spotlight.theme.accent_strong }}; --goal-accent-soft: {{ spotlight.theme.accent_soft }};"
+    >
+      <div class="goals-hero-spotlight__badge">{{ spotlight.theme.badge }}</div>
+      <div class="section-label">Ближайшая цель</div>
+      <strong>{{ spotlight.title }}</strong>
+      <span>{{ spotlight.remaining_amount|money }} UAH осталось до закрытия</span>
+    </div>
+  {% endif %}
+</section>
+
+<section class="content-grid">
+  <article class="panel goals-summary-panel">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Портфель целей</div>
+        <h3>Общий прогресс накоплений</h3>
+      </div>
+      <a href="{{ url_for('profile', section='goals') }}">Обновить</a>
+    </div>
+
+    <div class="goals-summary-grid">
+      <div class="goals-summary-card">
+        <span>Активные цели</span>
+        <strong>{{ goals_summary.active_count }}</strong>
+        <p>{{ goals_summary.completed_count }} уже достигнуто</p>
+      </div>
+      <div class="goals-summary-card goals-summary-card--success">
+        <span>Уже накоплено</span>
+        <strong>{{ goals_summary.total_saved|money }} UAH</strong>
+        <p>Реальные средства, выделенные на мечты</p>
+      </div>
+      <div class="goals-summary-card">
+        <span>Общая цель</span>
+        <strong>{{ goals_summary.total_target|money }} UAH</strong>
+        <p>{{ goals_summary.total_remaining|money }} UAH еще впереди</p>
+      </div>
+      <div class="goals-summary-card goals-summary-card--accent">
+        <span>Прогресс портфеля</span>
+        <strong>{{ goals_summary.overall_progress_pct }}%</strong>
+        <p>Суммарное выполнение всех накоплений</p>
+      </div>
+    </div>
+  </article>
+
+  <article class="panel goals-builder-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Новая цель</div>
+        <h3>Добавить накопление</h3>
+      </div>
+    </div>
+
+    <form method="post" action="{{ url_for('goal_create') }}" class="goals-builder-form">
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Название</label>
+        <input name="title" placeholder="Например: Новый MacBook" maxlength="120" required>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Описание</label>
+        <input name="description" placeholder="Для учебы, работы и pet-projects" maxlength="255">
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Сумма цели (UAH)</label>
+        <input name="target_amount" inputmode="decimal" placeholder="100000" required>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Тематика</label>
+        <select name="theme_key">
+          {% for theme in goal_theme_options %}
+            <option value="{{ theme.key }}">{{ theme.badge }} {{ theme.label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div style="display: grid; gap: 8px;">
+        <label class="muted" style="font-size: 13px;">Плановая дата</label>
+        <input name="target_date" type="date">
+      </div>
+
+      <button class="primary-btn" type="submit">Создать цель</button>
+      <p class="muted" style="font-size: 13px; line-height: 1.6;">
+        Доступно для новых накоплений прямо сейчас:
+        <strong>{{ balances['UAH']|money }} UAH</strong>
+      </p>
+    </form>
+  </article>
+
+  <article class="panel goals-spotlight-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Фокус месяца</div>
+        <h3>{% if goals_summary.featured_goal %}{{ goals_summary.featured_goal.title }}{% else %}Запустите первую цель{% endif %}</h3>
+      </div>
+    </div>
+
+    {% if goals_summary.featured_goal %}
+      {% set featured = goals_summary.featured_goal %}
+      <div class="goals-spotlight-layout">
+        <div
+          class="goal-orbit goal-orbit--large"
+          style="--goal-progress: {{ featured.progress_pct }}%; --goal-accent: {{ featured.theme.accent }}; --goal-accent-strong: {{ featured.theme.accent_strong }};"
+        >
+          <div class="goal-orbit__inner">
+            <strong>{{ featured.progress_pct }}%</strong>
+            <span>готово</span>
+          </div>
+        </div>
+
+        <div class="goals-spotlight-copy">
+          <p class="goals-spotlight-copy__lead">
+            {{ featured.saved_amount|money }} UAH уже отложено из {{ featured.target_amount|money }} UAH.
+          </p>
+          <div class="goal-meter">
+            <div
+              class="goal-meter__bar"
+              style="width: {{ featured.progress_pct }}%; --goal-accent: {{ featured.theme.accent }}; --goal-accent-strong: {{ featured.theme.accent_strong }};"
+            ></div>
+          </div>
+          <div class="goals-spotlight-stats">
+            <div>
+              <span>Осталось</span>
+              <strong>{{ featured.remaining_amount|money }} UAH</strong>
+            </div>
+            <div>
+              <span>Пополнений</span>
+              <strong>{{ featured.topup_count }}</strong>
+            </div>
+            <div>
+              <span>Последнее пополнение</span>
+              <strong>{{ featured.last_topup_label or 'Пока без пополнений' }}</strong>
+            </div>
+          </div>
+          {% if featured.pace_hint %}
+            <p class="goals-spotlight-copy__hint">{{ featured.pace_hint }}</p>
+          {% else %}
+            <p class="goals-spotlight-copy__hint">Эта цель сейчас ближе всего к закрытию. Отличный кандидат для следующего пополнения.</p>
+          {% endif %}
+        </div>
+      </div>
+    {% else %}
+      <div class="goals-empty-state">
+        <strong>Пока нет целей накопления</strong>
+        <p>Создайте первую цель, чтобы видеть прогресс, собирать деньги на крупные покупки и держать мотивацию прямо в dashboard.</p>
+      </div>
+    {% endif %}
+  </article>
+
+  <article class="panel autosave-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Автокопилка</div>
+        <h3>Часть входящих переводов сразу уходит в накопления</h3>
+      </div>
+      <span class="goal-status {{ savings_settings.status_class }}">{{ savings_settings.status_label }}</span>
+    </div>
+
+    <div class="autosave-layout">
+      <div class="autosave-preview">
+        <p class="autosave-preview__lead">
+          Каждый входящий перевод в <strong>UAH</strong> можно автоматически делить между основным счетом и копилкой.
+          Так цель пополняется сама, без ручных действий после каждого поступления.
+        </p>
+
+        <div class="autosave-split">
+          <div class="autosave-split__item autosave-split__item--goal">
+            <span>В копилку</span>
+            <strong>{{ savings_settings.auto_percent_label }}%</strong>
+            <p>{{ savings_settings.auto_amount_example|money }} UAH из тестового входящего перевода 1 000 UAH</p>
+          </div>
+          <div class="autosave-split__item">
+            <span>На основной счет</span>
+            <strong>{{ savings_settings.main_percent_label }}%</strong>
+            <p>{{ savings_settings.main_amount_example|money }} UAH останется на балансе после автосплита</p>
+          </div>
+        </div>
+
+        {% if savings_settings.target_goal %}
+          <div class="autosave-target">
+            <div>
+              <span>Текущая цель автокопилки</span>
+              <strong>{{ savings_settings.target_goal.title }}</strong>
+            </div>
+            <div>
+              <span>Прогресс</span>
+              <strong>{{ savings_settings.target_goal.progress_pct }}%</strong>
+            </div>
+            <div>
+              <span>Осталось</span>
+              <strong>{{ savings_settings.target_goal.remaining_amount|money }} UAH</strong>
+            </div>
+          </div>
+        {% elif savings_settings.target_goal_missing %}
+          <div class="goals-empty-state">
+            <strong>Цель для автокопилки больше недоступна</strong>
+            <p>Выберите новую цель, чтобы автоматические пополнения снова начали работать на входящих переводах.</p>
+          </div>
+        {% else %}
+          <div class="goals-empty-state">
+            <strong>Цель пока не выбрана</strong>
+            <p>Создайте цель и привяжите ее к автокопилке. Тогда 10% или другой выбранный процент будут уходить туда автоматически.</p>
+          </div>
+        {% endif %}
+      </div>
+
+      <form method="post" action="{{ url_for('goal_settings') }}" class="autosave-form">
+        <input type="hidden" name="return_section" value="goals">
+
+        <label class="autosave-toggle">
+          <input type="checkbox" name="enabled" value="1" {% if savings_settings.enabled %}checked{% endif %}>
+          <span>Включить автокопилку для входящих переводов</span>
+        </label>
+
+        <div class="autosave-form__grid">
+          <div style="display: grid; gap: 8px;">
+            <label class="muted" style="font-size: 13px;">Процент в копилку</label>
+            <input
+              name="auto_percent"
+              type="number"
+              min="0.01"
+              max="100"
+              step="0.01"
+              value="{{ savings_settings.auto_percent_label }}"
+              required
+            >
+          </div>
+
+          <div style="display: grid; gap: 8px;">
+            <label class="muted" style="font-size: 13px;">Цель для автопополнения</label>
+            <select name="target_goal_id">
+              <option value="">Выберите цель</option>
+              {% for goal in savings_goals %}
+                <option value="{{ goal.id }}" {% if savings_settings.target_goal_id == goal.id %}selected{% endif %}>
+                  {{ goal.title }}{% if goal.completed %} · цель закрыта{% else %} · осталось {{ goal.remaining_amount|money }} UAH{% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <button class="primary-btn" type="submit">Сохранить автокопилку</button>
+
+        <p class="autosave-hint">
+          Автосплит применяется только к новым входящим переводам в UAH.
+          Обычные переводы, обмен валют и уже полученные деньги не перераспределяются задним числом.
+        </p>
+      </form>
+    </div>
+  </article>
+
+  <article class="panel goals-board-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Доска целей</div>
+        <h3>Ваши накопления</h3>
+      </div>
+    </div>
+
+    {% if savings_goals %}
+      <div class="goals-board">
+        {% for goal in savings_goals %}
+          <article
+            class="goal-card"
+            style="--goal-progress: {{ goal.progress_pct }}%; --goal-accent: {{ goal.theme.accent }}; --goal-accent-strong: {{ goal.theme.accent_strong }}; --goal-accent-soft: {{ goal.theme.accent_soft }};"
+          >
+            <div class="goal-card__top">
+              <div class="goal-card__badge">{{ goal.theme.badge }}</div>
+              <div class="goal-card__title">
+                <div class="section-label">{{ goal.theme.label }}</div>
+                <h3>{{ goal.title }}</h3>
+              </div>
+              <span class="goal-status {{ goal.status_class }}">{{ goal.status_label }}</span>
+            </div>
+
+            <p class="goal-card__description">
+              {{ goal.description or 'Личная финансовая цель с прогрессом, дедлайном и пополнением прямо с баланса FelixBank.' }}
+            </p>
+
+            <div class="goal-card__body">
+              <div class="goal-orbit" aria-hidden="true">
+                <div class="goal-orbit__inner">
+                  <strong>{{ goal.progress_pct }}%</strong>
+                  <span>готово</span>
+                </div>
+              </div>
+
+              <div class="goal-card__stats">
+                <div class="goal-metric">
+                  <span>Накоплено</span>
+                  <strong>{{ goal.saved_amount|money }} UAH</strong>
+                </div>
+                <div class="goal-metric">
+                  <span>Цель</span>
+                  <strong>{{ goal.target_amount|money }} UAH</strong>
+                </div>
+                <div class="goal-metric">
+                  <span>Осталось</span>
+                  <strong>{{ goal.remaining_amount|money }} UAH</strong>
+                </div>
+                <div class="goal-metric">
+                  <span>Пополнений</span>
+                  <strong>{{ goal.topup_count }}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="goal-meter">
+              <div class="goal-meter__bar" style="width: {{ goal.progress_pct }}%;"></div>
+            </div>
+
+            <div class="goal-milestones">
+              {% for milestone in goal.milestones %}
+                <span class="{{ 'is-active' if milestone.active else '' }}">{{ milestone.value }}%</span>
+              {% endfor %}
+            </div>
+
+            <div class="goal-card__meta">
+              <span>Создано: {{ goal.created_at.strftime("%d.%m.%Y") if goal.created_at else '—' }}</span>
+              <span>Плановая дата: {{ goal.target_date_label or 'без дедлайна' }}</span>
+            </div>
+
+            {% if goal.pace_hint %}
+              <p class="goal-card__hint">{{ goal.pace_hint }}</p>
+            {% endif %}
+
+            {% if goal.completed %}
+              <div class="goal-card__complete">
+                Цель достигнута. Теперь можно открыть следующую большую мечту.
+              </div>
+            {% else %}
+              <form method="post" action="{{ url_for('goal_fund', goal_id=goal.id) }}" class="goal-fund-form">
+                <input type="hidden" name="return_section" value="goals">
+                <input name="amount" inputmode="decimal" placeholder="Сумма пополнения, UAH" required>
+                <button class="primary-btn" type="submit">Пополнить из UAH</button>
+              </form>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="goals-empty-state goals-empty-state--board">
+        <strong>Пока здесь пусто</strong>
+        <p>После создания цели на этой доске появятся карточки с прогресс-барами, круговыми индикаторами и историей пополнений.</p>
+      </div>
+    {% endif %}
+  </article>
+
+  <article class="panel goals-activity-card">
+    <div class="panel-heading">
+      <div>
+        <div class="section-label">Лента пополнений</div>
+        <h3>Последняя активность по целям</h3>
+      </div>
+    </div>
+
+    {% if goals_activity %}
+      <div class="goal-activity-list">
+        {% for event in goals_activity %}
+          <div class="goal-activity-item">
+            <div
+              class="goal-activity-item__icon"
+              style="--goal-accent: {{ event.theme.accent }}; --goal-accent-strong: {{ event.theme.accent_strong }};"
+            >
+              {{ event.theme.badge }}
+            </div>
+            <div class="goal-activity-item__body">
+              <span class="goal-activity-item__kind">
+                {{ 'Автокопилка' if event.event_type == 'auto_topup' else 'Ручное пополнение' }}
+              </span>
+              <strong>{{ event.event_title }}</strong>
+              <p>{{ event.created_at_label }} · {{ event.event_hint }} Сейчас цель закрыта на {{ event.progress_pct }}%.</p>
+            </div>
+            <div class="goal-activity-item__amount">
+              +{{ event.amount|money }} {{ event.currency_code }}
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="goals-empty-state">
+        <strong>История пополнений пока пуста</strong>
+        <p>После первого пополнения цели здесь появятся операции с датой, суммой и текущим прогрессом.</p>
+      </div>
+    {% endif %}
+  </article>
+</section>

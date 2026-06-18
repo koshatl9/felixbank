@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Подтверждение входа</title>
+    <link rel="stylesheet" href="{{ url_for('serve_static_file', filename='css/login.css') }}">
+    <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="wrapper">
+        <div class="wrapper__brand">
+            <div class="wrapper__brand-title">felixBANK</div>
+            <img
+                class="wrapper__brand-image"
+                src="{{ url_for('serve_assets', filename='mascot.png') }}"
+                alt="Mascot"
+                loading="lazy"
+            >
+        </div>
+
+        <form action="" method="post" autocomplete="on" novalidate>
+            <h1>2FA вход</h1>
+
+            <p class="wrapper__meta">
+                Логин <strong>{{ login_value }}</strong> подтверждается одноразовым 6-значным кодом.
+            </p>
+
+            {% if error %}
+                <p class="wrapper__error">{{ error }}</p>
+            {% endif %}
+
+            {% if info %}
+                <p class="wrapper__info">{{ info }}</p>
+            {% endif %}
+
+            <div class="wrapper__hint">
+                Код отправлен на <strong>{{ target_masked }}</strong>. Срок действия: {{ expires_minutes }} мин.
+            </div>
+
+            <div class="input-box">
+                <input
+                    type="text"
+                    name="code"
+                    placeholder="Введите 6-значный код"
+                    inputmode="numeric"
+                    maxlength="6"
+                    autocomplete="one-time-code"
+                    required
+                >
+                <i class="bx bx-shield-quarter"></i>
+            </div>
+
+            <div class="wrapper__actions">
+                <button type="submit" class="btn">Подтвердить вход</button>
+                <button type="submit" class="btn btn--secondary" name="action" value="resend">Отправить код заново</button>
+            </div>
+        </form>
+
+        <div class="register-link">
+            <p><a href="{{ url_for('login', reset_2fa=1) }}">Вернуться к вводу логина и пароля</a></p>
+        </div>
+    </div>
+</body>
+</html>
