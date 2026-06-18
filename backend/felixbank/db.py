@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import date, datetime, time, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from secrets import randbelow
 from typing import Any
 
@@ -11,6 +11,7 @@ from flask import current_app
 from werkzeug.security import generate_password_hash
 
 from .config import (
+    DEFAULT_AUTOSAVE_PERCENT,
     DEFAULT_TRANSFER_PIN,
     INITIAL_BALANCES,
     LEGACY_USERS_PATH,
@@ -189,10 +190,359 @@ def update_balances(user_id: int, balances: dict[str, Decimal]) -> None:
         connection.commit()
 
 
-def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currency_code: str = "UAH") -> None:
-    transfer_amount = amount.quantize(Decimal("0.01"))
+def create_savings_goal(
+    user_id: int,
+    title: str,
+    description: str,
+    theme_key: str,
+    target_amount: Decimal,
+    target_date: date | None = None,
+    currency_code: str = "UAH",
+) -> int:
+    normalized_target = Decimal(str(target_amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    normalized_currency = str(currency_code or "UAH").strip().upper()[:3] or "UAH"
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO savings_goals (
+                    user_id,
+                    title,
+                    description,
+                    theme_key,
+                    currency_code,
+                    target_amount,
+                    saved_amount,
+                    target_date
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    user_id,
+                    str(title or "").strip()[:120],
+                    str(description or "").strip()[:255],
+                    str(theme_key or "aurora").strip()[:24] or "aurora",
+                    normalized_currency,
+                    decimal_to_str(normalized_target),
+                    decimal_to_str(Decimal("0.00")),
+                    target_date,
+                ),
+            )
+            goal_id = int(cursor.lastrowid)
+        connection.commit()
+    return goal_id
+
+
+def get_savings_goals(user_id: int) -> list[dict[str, Any]]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    g.id,
+                    g.user_id,
+                    g.title,
+                    g.description,
+                    g.theme_key,
+                    g.currency_code,
+                    g.target_amount,
+                    g.saved_amount,
+                    g.target_date,
+                    g.created_at,
+                    g.updated_at,
+                    COUNT(e.id) AS topup_count,
+                    MAX(e.created_at) AS last_topup_at
+                FROM savings_goals AS g
+                LEFT JOIN savings_goal_events AS e
+                    ON e.goal_id = g.id
+                   AND e.event_type IN ('topup', 'auto_topup')
+                WHERE g.user_id = %s
+                GROUP BY
+                    g.id,
+                    g.user_id,
+                    g.title,
+                    g.description,
+                    g.theme_key,
+                    g.currency_code,
+                    g.target_amount,
+                    g.saved_amount,
+                    g.target_date,
+                    g.created_at,
+                    g.updated_at
+                ORDER BY
+                    (g.saved_amount >= g.target_amount) ASC,
+                    COALESCE(g.target_date, DATE('9999-12-31')) ASC,
+                    g.created_at DESC,
+                    g.id DESC
+                """,
+                (user_id,),
+            )
+            return cursor.fetchall()
+
+
+def get_savings_settings(user_id: int) -> dict[str, Any]:
+    default_percent = DEFAULT_AUTOSAVE_PERCENT.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    s.user_id,
+                    s.enabled,
+                    s.auto_percent,
+                    s.target_goal_id,
+                    s.created_at,
+                    s.updated_at,
+                    g.title AS goal_title,
+                    g.currency_code AS goal_currency_code,
+                    g.target_amount AS goal_target_amount,
+                    g.saved_amount AS goal_saved_amount
+                FROM savings_settings AS s
+                LEFT JOIN savings_goals AS g
+                    ON g.id = s.target_goal_id
+                   AND g.user_id = s.user_id
+                WHERE s.user_id = %s
+                LIMIT 1
+                """,
+                (user_id,),
+            )
+            row = cursor.fetchone()
+
+    if row is None:
+        return {
+            "user_id": user_id,
+            "enabled": False,
+            "auto_percent": default_percent,
+            "target_goal_id": None,
+            "goal_title": "",
+            "goal_currency_code": "UAH",
+            "goal_target_amount": Decimal("0.00"),
+            "goal_saved_amount": Decimal("0.00"),
+        }
+
+    row["enabled"] = bool(row.get("enabled"))
+    row["auto_percent"] = Decimal(str(row.get("auto_percent") or default_percent)).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    row["target_goal_id"] = int(row["target_goal_id"]) if row.get("target_goal_id") is not None else None
+    row["goal_target_amount"] = Decimal(str(row.get("goal_target_amount") or "0")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    row["goal_saved_amount"] = Decimal(str(row.get("goal_saved_amount") or "0")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    return row
+
+
+def save_savings_settings(
+    user_id: int,
+    *,
+    enabled: bool,
+    auto_percent: Decimal,
+    target_goal_id: int | None,
+) -> dict[str, Any]:
+    normalized_percent = Decimal(str(auto_percent)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if normalized_percent <= 0 or normalized_percent > Decimal("100.00"):
+        raise ValueError("invalid auto percent")
+    if enabled and target_goal_id is None:
+        raise ValueError("target goal required")
+
+    resolved_goal_id: int | None = None
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            if target_goal_id is not None:
+                cursor.execute(
+                    """
+                    SELECT id, currency_code, target_amount, saved_amount
+                    FROM savings_goals
+                    WHERE id = %s AND user_id = %s
+                    LIMIT 1
+                    """,
+                    (target_goal_id, user_id),
+                )
+                goal_row = cursor.fetchone()
+                if goal_row is None:
+                    raise ValueError("goal not found")
+                if str(goal_row.get("currency_code") or "UAH").strip().upper() != "UAH":
+                    raise ValueError("unsupported goal currency")
+
+                target_amount = Decimal(str(goal_row.get("target_amount") or "0")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+                saved_amount = Decimal(str(goal_row.get("saved_amount") or "0")).quantize(
+                    Decimal("0.01"),
+                    rounding=ROUND_HALF_UP,
+                )
+                if enabled and saved_amount >= target_amount and target_amount > 0:
+                    raise ValueError("goal already completed")
+                resolved_goal_id = int(goal_row["id"])
+
+            cursor.execute(
+                """
+                INSERT INTO savings_settings (user_id, enabled, auto_percent, target_goal_id)
+                VALUES (%s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    enabled = VALUES(enabled),
+                    auto_percent = VALUES(auto_percent),
+                    target_goal_id = VALUES(target_goal_id),
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    user_id,
+                    1 if enabled else 0,
+                    decimal_to_str(normalized_percent),
+                    resolved_goal_id,
+                ),
+            )
+        connection.commit()
+
+    return get_savings_settings(user_id)
+
+
+def get_savings_goal_activity(user_id: int, limit: int = 12) -> list[dict[str, Any]]:
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT
+                    e.id,
+                    e.goal_id,
+                    e.event_type,
+                    e.amount,
+                    e.created_at,
+                    g.title,
+                    g.theme_key,
+                    g.currency_code,
+                    g.target_amount,
+                    g.saved_amount
+                FROM savings_goal_events AS e
+                JOIN savings_goals AS g ON g.id = e.goal_id
+                WHERE e.user_id = %s
+                ORDER BY e.created_at DESC, e.id DESC
+                LIMIT %s
+                """,
+                (user_id, max(1, int(limit))),
+            )
+            return cursor.fetchall()
+
+
+def top_up_savings_goal(user_id: int, goal_id: int, amount: Decimal) -> dict[str, Any]:
+    normalized_amount = Decimal(str(amount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if normalized_amount <= 0:
+        raise ValueError("amount must be positive")
+
+    with get_db() as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT id, title, currency_code, target_amount, saved_amount
+                FROM savings_goals
+                WHERE id = %s AND user_id = %s
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (goal_id, user_id),
+            )
+            goal_row = cursor.fetchone()
+            if goal_row is None:
+                raise ValueError("goal not found")
+
+            if str(goal_row.get("currency_code") or "UAH").strip().upper() != "UAH":
+                raise ValueError("unsupported goal currency")
+
+            target_amount = Decimal(str(goal_row.get("target_amount") or "0")).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            saved_amount = Decimal(str(goal_row.get("saved_amount") or "0")).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            remaining_amount = (target_amount - saved_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            if remaining_amount <= 0:
+                raise ValueError("goal already completed")
+            if normalized_amount > remaining_amount:
+                raise ValueError("goal top up exceeds remaining amount")
+
+            cursor.execute(
+                """
+                SELECT amount
+                FROM balances
+                WHERE user_id = %s AND currency_code = 'UAH'
+                LIMIT 1
+                FOR UPDATE
+                """,
+                (user_id,),
+            )
+            balance_row = cursor.fetchone()
+            available_amount = Decimal(str((balance_row or {}).get("amount") or "0")).quantize(
+                Decimal("0.01"),
+                rounding=ROUND_HALF_UP,
+            )
+            if available_amount < normalized_amount:
+                raise ValueError("insufficient funds")
+
+            cursor.execute(
+                """
+                UPDATE balances
+                SET amount = amount - %s
+                WHERE user_id = %s AND currency_code = 'UAH'
+                """,
+                (decimal_to_str(normalized_amount), user_id),
+            )
+            cursor.execute(
+                """
+                UPDATE savings_goals
+                SET saved_amount = saved_amount + %s
+                WHERE id = %s
+                """,
+                (decimal_to_str(normalized_amount), goal_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO savings_goal_events (goal_id, user_id, event_type, amount)
+                VALUES (%s, %s, 'topup', %s)
+                """,
+                (goal_id, user_id, decimal_to_str(normalized_amount)),
+            )
+        connection.commit()
+
+    new_saved_amount = (saved_amount + normalized_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    new_remaining_amount = (target_amount - new_saved_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {
+        "goal_id": int(goal_row["id"]),
+        "title": str(goal_row.get("title") or ""),
+        "amount": normalized_amount,
+        "saved_amount": new_saved_amount,
+        "target_amount": target_amount,
+        "remaining_amount": max(Decimal("0.00"), new_remaining_amount),
+        "completed": new_saved_amount >= target_amount,
+    }
+
+
+def transfer_balance(
+    sender_id: int,
+    recipient_id: int,
+    amount: Decimal,
+    currency_code: str = "UAH",
+) -> dict[str, Any]:
+    transfer_amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if transfer_amount <= 0:
         raise ValueError("amount must be positive")
+
+    normalized_currency = str(currency_code or "UAH").strip().upper()[:3] or "UAH"
+    auto_saved_amount = Decimal("0.00")
+    net_recipient_amount = transfer_amount
+    auto_saved_goal_id: int | None = None
+    auto_saved_goal_title = ""
+    auto_saved_completed = False
+    transfer_id = 0
 
     with get_db() as connection:
         with connection.cursor() as cursor:
@@ -203,7 +553,7 @@ def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currenc
                 WHERE user_id = %s AND currency_code = %s
                 FOR UPDATE
                 """,
-                (sender_id, currency_code),
+                (sender_id, normalized_currency),
             )
             sender_row = cursor.fetchone()
             sender_balance = Decimal(str(sender_row["amount"])) if sender_row is not None else Decimal("0")
@@ -216,7 +566,7 @@ def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currenc
                 SET amount = amount - %s
                 WHERE user_id = %s AND currency_code = %s
                 """,
-                (decimal_to_str(transfer_amount), sender_id, currency_code),
+                (decimal_to_str(transfer_amount), sender_id, normalized_currency),
             )
             cursor.execute(
                 """
@@ -224,16 +574,116 @@ def transfer_balance(sender_id: int, recipient_id: int, amount: Decimal, currenc
                 VALUES (%s, %s, %s)
                 ON DUPLICATE KEY UPDATE amount = amount + VALUES(amount)
                 """,
-                (recipient_id, currency_code, decimal_to_str(transfer_amount)),
+                (recipient_id, normalized_currency, decimal_to_str(transfer_amount)),
             )
             cursor.execute(
                 """
                 INSERT INTO transfers (sender_id, recipient_id, currency_code, amount)
                 VALUES (%s, %s, %s, %s)
                 """,
-                (sender_id, recipient_id, currency_code, decimal_to_str(transfer_amount)),
+                (sender_id, recipient_id, normalized_currency, decimal_to_str(transfer_amount)),
             )
+            transfer_id = int(cursor.lastrowid or 0)
+
+            if normalized_currency == "UAH":
+                cursor.execute(
+                    """
+                    SELECT enabled, auto_percent, target_goal_id
+                    FROM savings_settings
+                    WHERE user_id = %s
+                    LIMIT 1
+                    """,
+                    (recipient_id,),
+                )
+                settings_row = cursor.fetchone()
+                if settings_row and bool(settings_row.get("enabled")) and settings_row.get("target_goal_id") is not None:
+                    auto_percent = Decimal(
+                        str(settings_row.get("auto_percent") or DEFAULT_AUTOSAVE_PERCENT)
+                    ).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                    if auto_percent > 0:
+                        cursor.execute(
+                            """
+                            SELECT id, title, currency_code, target_amount, saved_amount
+                            FROM savings_goals
+                            WHERE id = %s AND user_id = %s
+                            LIMIT 1
+                            FOR UPDATE
+                            """,
+                            (int(settings_row["target_goal_id"]), recipient_id),
+                        )
+                        goal_row = cursor.fetchone()
+                        if goal_row is not None and str(goal_row.get("currency_code") or "UAH").strip().upper() == "UAH":
+                            target_amount = Decimal(str(goal_row.get("target_amount") or "0")).quantize(
+                                Decimal("0.01"),
+                                rounding=ROUND_HALF_UP,
+                            )
+                            saved_amount = Decimal(str(goal_row.get("saved_amount") or "0")).quantize(
+                                Decimal("0.01"),
+                                rounding=ROUND_HALF_UP,
+                            )
+                            remaining_amount = max(
+                                Decimal("0.00"),
+                                (target_amount - saved_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                            )
+                            proposed_amount = (transfer_amount * auto_percent / Decimal("100")).quantize(
+                                Decimal("0.01"),
+                                rounding=ROUND_HALF_UP,
+                            )
+                            auto_saved_amount = min(transfer_amount, remaining_amount, proposed_amount)
+
+                            if auto_saved_amount > 0:
+                                cursor.execute(
+                                    """
+                                    UPDATE balances
+                                    SET amount = amount - %s
+                                    WHERE user_id = %s AND currency_code = 'UAH'
+                                    """,
+                                    (decimal_to_str(auto_saved_amount), recipient_id),
+                                )
+                                cursor.execute(
+                                    """
+                                    UPDATE savings_goals
+                                    SET saved_amount = saved_amount + %s
+                                    WHERE id = %s
+                                    """,
+                                    (decimal_to_str(auto_saved_amount), int(goal_row["id"])),
+                                )
+                                cursor.execute(
+                                    """
+                                    INSERT INTO savings_goal_events (goal_id, user_id, event_type, amount)
+                                    VALUES (%s, %s, 'auto_topup', %s)
+                                    """,
+                                    (
+                                        int(goal_row["id"]),
+                                        recipient_id,
+                                        decimal_to_str(auto_saved_amount),
+                                    ),
+                                )
+                                net_recipient_amount = (transfer_amount - auto_saved_amount).quantize(
+                                    Decimal("0.01"),
+                                    rounding=ROUND_HALF_UP,
+                                )
+                                auto_saved_goal_id = int(goal_row["id"])
+                                auto_saved_goal_title = str(goal_row.get("title") or "")
+                                auto_saved_completed = saved_amount + auto_saved_amount >= target_amount
         connection.commit()
+
+    return {
+        "transfer_id": transfer_id,
+        "sender_id": sender_id,
+        "recipient_id": recipient_id,
+        "currency_code": normalized_currency,
+        "transfer_amount": transfer_amount,
+        "net_recipient_amount": net_recipient_amount,
+        "auto_saved_amount": auto_saved_amount,
+        "auto_saved_goal_id": auto_saved_goal_id,
+        "auto_saved_goal_title": auto_saved_goal_title,
+        "auto_saved_applied": auto_saved_amount > 0,
+        "auto_saved_completed": auto_saved_completed,
+    }
 
 
 def get_transfer_history_for_user(
@@ -295,6 +745,107 @@ def get_transfer_history_for_user(
             rows = cursor.fetchall()
 
     return rows
+
+
+def get_financial_history_for_user(
+    user_id: int,
+    limit: int | None = 20,
+    direction: str = "all",
+    currency_code: str | None = None,
+    search_query: str = "",
+) -> list[dict[str, Any]]:
+    normalized_direction = str(direction or "all").strip().lower()
+    normalized_currency = str(currency_code or "").strip().upper()[:3]
+    normalized_search = str(search_query or "").strip()
+
+    transfer_rows = get_transfer_history_for_user(
+        user_id=user_id,
+        limit=None,
+        direction=normalized_direction,
+        currency_code=normalized_currency or None,
+        search_query=normalized_search,
+    )
+
+    goal_rows: list[dict[str, Any]] = []
+    if normalized_direction != "incoming" and (not normalized_currency or normalized_currency == "UAH"):
+        with get_db() as connection:
+            with connection.cursor() as cursor:
+                params: list[Any] = [user_id]
+                query = """
+                    SELECT
+                        e.id,
+                        e.goal_id,
+                        e.event_type,
+                        e.amount,
+                        e.created_at,
+                        g.title,
+                        g.currency_code
+                    FROM savings_goal_events AS e
+                    JOIN savings_goals AS g ON g.id = e.goal_id
+                    WHERE e.user_id = %s
+                """
+                if normalized_search:
+                    query += " AND g.title LIKE %s"
+                    params.append(f"%{normalized_search}%")
+                query += " ORDER BY e.created_at DESC, e.id DESC"
+                cursor.execute(query, tuple(params))
+                goal_rows = cursor.fetchall()
+
+    history: list[dict[str, Any]] = []
+    for row in transfer_rows:
+        sender_id = int(row["sender_id"])
+        recipient_id = int(row["recipient_id"])
+        is_outgoing = sender_id == user_id
+        history.append(
+            {
+                "history_key": f"transfer-{int(row['id'])}",
+                "sort_id": int(row["id"]),
+                "kind": "transfer",
+                "created_at": row.get("created_at"),
+                "sender_id": sender_id,
+                "recipient_id": recipient_id,
+                "sender_login": str(row.get("sender_login") or ""),
+                "recipient_login": str(row.get("recipient_login") or ""),
+                "amount": Decimal(str(row.get("amount") or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "currency_code": str(row.get("currency_code") or "UAH"),
+                "status_label": "Исходящий" if is_outgoing else "Входящий",
+                "status_class": "status-pill--out" if is_outgoing else "status-pill--in",
+                "operation_label": "Перевод",
+            }
+        )
+
+    for row in goal_rows:
+        event_type = str(row.get("event_type") or "topup")
+        history.append(
+            {
+                "history_key": f"goal-topup-{int(row['id'])}",
+                "sort_id": int(row["id"]),
+                "kind": "goal_topup",
+                "event_type": event_type,
+                "created_at": row.get("created_at"),
+                "sender_id": user_id,
+                "recipient_id": None,
+                "sender_login": "Автокопилка" if event_type == "auto_topup" else "Ваш баланс",
+                "recipient_login": str(row.get("title") or "Цель накопления"),
+                "amount": Decimal(str(row.get("amount") or "0")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                "currency_code": str(row.get("currency_code") or "UAH"),
+                "status_label": "Накопление",
+                "status_class": "status-pill--goal",
+                "operation_label": "Автокопилка" if event_type == "auto_topup" else "Пополнение цели",
+            }
+        )
+
+    history.sort(
+        key=lambda item: (
+            item.get("created_at") or datetime.min,
+            int(item.get("sort_id") or 0),
+        ),
+        reverse=True,
+    )
+
+    if limit is not None:
+        history = history[: max(1, int(limit))]
+    return history
 
 
 def get_sender_daily_transfer_total(sender_id: int, currency_code: str = "UAH") -> Decimal:

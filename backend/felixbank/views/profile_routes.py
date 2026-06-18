@@ -10,6 +10,7 @@ from werkzeug.utils import secure_filename
 
 from ..auth import current_user, login_required
 from ..config import (
+    DEFAULT_AUTOSAVE_PERCENT,
     DEFAULT_TRANSFER_PIN,
     TRANSFER_DAILY_LIMIT_UAH,
     TRANSFER_MAX_AMOUNT_UAH,
@@ -19,20 +20,26 @@ from ..config import (
 from ..db import (
     create_audit_log,
     create_notification,
+    create_savings_goal,
     get_all_user_logins,
     get_balances,
+    get_financial_history_for_user,
     get_recent_notifications,
     get_recent_rates_rows,
     get_recent_rates_rows_in_range,
     get_rates_history,
     get_rates_history_between_dates,
     get_or_create_virtual_card,
+    get_savings_goal_activity,
+    get_savings_goals,
+    get_savings_settings,
     get_sender_daily_transfer_total,
-    get_transfer_history_for_user,
     get_user_profile,
     insert_rates_history,
     save_user_profile,
+    save_savings_settings,
     set_virtual_card_blocked,
+    top_up_savings_goal,
     update_balances,
 )
 from ..rates import rates_payload
@@ -43,12 +50,250 @@ from .transfer_routes import _history_csv_response, _history_links, _read_histor
 
 DASHBOARD_SECTIONS = {
     "overview",
+    "goals",
     "profile",
     "rates",
     "transfer-card",
     "transfer-international",
     "virtual-card",
 }
+
+GOAL_THEME_OPTIONS = {
+    "tech": {
+        "key": "tech",
+        "label": "Tech / gadgets",
+        "badge": "💻",
+        "accent": "#b56cff",
+        "accent_strong": "#7c3aed",
+        "accent_soft": "rgba(181, 108, 255, 0.20)",
+    },
+    "travel": {
+        "key": "travel",
+        "label": "Travel / dream",
+        "badge": "✈️",
+        "accent": "#5dd7ff",
+        "accent_strong": "#2563eb",
+        "accent_soft": "rgba(93, 215, 255, 0.18)",
+    },
+    "home": {
+        "key": "home",
+        "label": "Home / comfort",
+        "badge": "🏡",
+        "accent": "#ffb86c",
+        "accent_strong": "#f97316",
+        "accent_soft": "rgba(255, 184, 108, 0.20)",
+    },
+    "future": {
+        "key": "future",
+        "label": "Big future",
+        "badge": "🚀",
+        "accent": "#63f2a7",
+        "accent_strong": "#16a34a",
+        "accent_soft": "rgba(99, 242, 167, 0.18)",
+    },
+}
+
+
+def _goal_theme_meta(theme_key: str) -> dict[str, str]:
+    return GOAL_THEME_OPTIONS.get(str(theme_key or "").strip().lower(), GOAL_THEME_OPTIONS["tech"])
+
+
+def _goal_progress_pct(saved_amount: Decimal, target_amount: Decimal) -> int:
+    if target_amount <= 0:
+        return 0
+    ratio = (saved_amount / target_amount) * Decimal("100")
+    rounded = int(ratio.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+    return max(0, min(100, rounded))
+
+
+def _decorate_savings_goals(rows: list[dict[str, object]]) -> tuple[list[dict[str, object]], dict[str, object]]:
+    goals: list[dict[str, object]] = []
+    total_target = Decimal("0.00")
+    total_saved = Decimal("0.00")
+    total_remaining = Decimal("0.00")
+    active_count = 0
+    completed_count = 0
+    today = date.today()
+
+    for row in rows:
+        target_amount = Decimal(str(row.get("target_amount") or "0")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        saved_amount = Decimal(str(row.get("saved_amount") or "0")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        remaining_amount = max(
+            Decimal("0.00"),
+            (target_amount - saved_amount).quantize(TWOPLACES, rounding=ROUND_HALF_UP),
+        )
+        progress_pct = _goal_progress_pct(saved_amount, target_amount)
+        completed = saved_amount >= target_amount and target_amount > 0
+        theme = _goal_theme_meta(str(row.get("theme_key") or "tech"))
+        target_date_value = row.get("target_date")
+        target_date_label = target_date_value.strftime("%d.%m.%Y") if isinstance(target_date_value, date) else ""
+        last_topup_at = row.get("last_topup_at")
+        last_topup_label = last_topup_at.strftime("%d.%m.%Y %H:%M") if isinstance(last_topup_at, datetime) else ""
+
+        recommended_monthly: Decimal | None = None
+        pace_hint = ""
+        if isinstance(target_date_value, date) and not completed and remaining_amount > 0:
+            days_left = (target_date_value - today).days
+            if days_left >= 0:
+                months_left = max(1, (days_left + 29) // 30)
+                recommended_monthly = (remaining_amount / Decimal(months_left)).quantize(
+                    TWOPLACES,
+                    rounding=ROUND_HALF_UP,
+                )
+                pace_hint = (
+                    f"Чтобы успеть к {target_date_label}, откладывайте около "
+                    f"{decimal_to_str(recommended_monthly)} UAH в месяц."
+                )
+            else:
+                pace_hint = "Срок уже прошел, но цель можно добить в свободном темпе."
+
+        if completed:
+            status_label = "Цель закрыта"
+            status_class = "goal-status--success"
+            completed_count += 1
+        else:
+            active_count += 1
+            if progress_pct >= 75:
+                status_label = "Финальный рывок"
+                status_class = "goal-status--warning"
+            elif progress_pct >= 40:
+                status_label = "В хорошем темпе"
+                status_class = "goal-status--info"
+            else:
+                status_label = "На старте"
+                status_class = "goal-status--default"
+
+        decorated_goal = {
+            **row,
+            "theme": theme,
+            "target_amount": target_amount,
+            "saved_amount": saved_amount,
+            "remaining_amount": remaining_amount,
+            "progress_pct": progress_pct,
+            "completed": completed,
+            "status_label": status_label,
+            "status_class": status_class,
+            "target_date_label": target_date_label,
+            "last_topup_label": last_topup_label,
+            "topup_count": int(row.get("topup_count") or 0),
+            "pace_hint": pace_hint,
+            "recommended_monthly": recommended_monthly,
+            "milestones": [
+                {"value": 25, "active": progress_pct >= 25},
+                {"value": 50, "active": progress_pct >= 50},
+                {"value": 75, "active": progress_pct >= 75},
+                {"value": 100, "active": completed},
+            ],
+        }
+        goals.append(decorated_goal)
+        total_target += target_amount
+        total_saved += saved_amount
+        total_remaining += remaining_amount
+
+    overall_progress_pct = _goal_progress_pct(total_saved, total_target) if total_target > 0 else 0
+    active_goals = [goal for goal in goals if not bool(goal["completed"])]
+    featured_goal = None
+    if active_goals:
+        featured_goal = min(
+            active_goals,
+            key=lambda goal: (
+                Decimal(str(goal["remaining_amount"])),
+                0 if isinstance(goal.get("target_date"), date) else 1,
+                goal.get("target_date") or date.max,
+                -int(goal["progress_pct"]),
+            ),
+        )
+    elif goals:
+        featured_goal = goals[0]
+
+    summary = {
+        "goal_count": len(goals),
+        "active_count": active_count,
+        "completed_count": completed_count,
+        "total_target": total_target.quantize(TWOPLACES, rounding=ROUND_HALF_UP),
+        "total_saved": total_saved.quantize(TWOPLACES, rounding=ROUND_HALF_UP),
+        "total_remaining": total_remaining.quantize(TWOPLACES, rounding=ROUND_HALF_UP),
+        "overall_progress_pct": overall_progress_pct,
+        "featured_goal": featured_goal,
+    }
+    return goals, summary
+
+
+def _decorate_goal_activity(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    activity: list[dict[str, object]] = []
+    for row in rows:
+        theme = _goal_theme_meta(str(row.get("theme_key") or "tech"))
+        amount = Decimal(str(row.get("amount") or "0")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        target_amount = Decimal(str(row.get("target_amount") or "0")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        saved_amount = Decimal(str(row.get("saved_amount") or "0")).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+        progress_pct = _goal_progress_pct(saved_amount, target_amount)
+        created_at = row.get("created_at")
+        created_at_label = created_at.strftime("%d.%m.%Y %H:%M") if isinstance(created_at, datetime) else ""
+        event_type = str(row.get("event_type") or "topup")
+        event_title = (
+            f"Автопополнение цели «{row.get('title') or 'Цель накопления'}»"
+            if event_type == "auto_topup"
+            else f"Пополнение цели «{row.get('title') or 'Цель накопления'}»"
+        )
+        event_hint = (
+            "Деньги автоматически ушли в копилку после входящего перевода."
+            if event_type == "auto_topup"
+            else "Средства переведены в цель вручную с UAH-баланса."
+        )
+        activity.append(
+            {
+                **row,
+                "theme": theme,
+                "amount": amount,
+                "target_amount": target_amount,
+                "saved_amount": saved_amount,
+                "progress_pct": progress_pct,
+                "created_at_label": created_at_label,
+                "event_type": event_type,
+                "event_title": event_title,
+                "event_hint": event_hint,
+            }
+        )
+    return activity
+
+
+def _decorate_savings_settings(
+    settings_row: dict[str, object],
+    goals: list[dict[str, object]],
+) -> dict[str, object]:
+    auto_percent = Decimal(str(settings_row.get("auto_percent") or DEFAULT_AUTOSAVE_PERCENT)).quantize(
+        TWOPLACES,
+        rounding=ROUND_HALF_UP,
+    )
+    auto_percent = min(Decimal("100.00"), max(Decimal("0.00"), auto_percent))
+    main_percent = (Decimal("100.00") - auto_percent).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    incoming_example = Decimal("1000.00")
+    auto_amount_example = (incoming_example * auto_percent / Decimal("100")).quantize(
+        TWOPLACES,
+        rounding=ROUND_HALF_UP,
+    )
+    main_amount_example = (incoming_example - auto_amount_example).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
+    target_goal_id = settings_row.get("target_goal_id")
+    normalized_goal_id = int(target_goal_id) if target_goal_id is not None else None
+    goal_map = {int(goal["id"]): goal for goal in goals}
+    target_goal = goal_map.get(normalized_goal_id)
+
+    return {
+        **settings_row,
+        "enabled": bool(settings_row.get("enabled")),
+        "auto_percent": auto_percent,
+        "auto_percent_label": decimal_to_str(auto_percent),
+        "main_percent": main_percent,
+        "main_percent_label": decimal_to_str(main_percent),
+        "incoming_example": incoming_example,
+        "auto_amount_example": auto_amount_example,
+        "main_amount_example": main_amount_example,
+        "target_goal_id": normalized_goal_id,
+        "target_goal": target_goal,
+        "target_goal_missing": normalized_goal_id is not None and target_goal is None,
+        "status_label": "Включена" if bool(settings_row.get("enabled")) else "Выключена",
+        "status_class": "goal-status--success" if bool(settings_row.get("enabled")) else "goal-status--default",
+    }
 
 
 def _fallback_rates() -> list[dict[str, object]]:
@@ -176,13 +421,17 @@ def register_profile_routes(app: Flask) -> None:
         users = get_all_user_logins(exclude_user_id=user_id)
         card = get_or_create_virtual_card(user_id, str(user["login"]))
         card_blocked = bool(card.get("blocked"))
+        savings_goals_raw = get_savings_goals(user_id)
+        savings_goals, goals_summary = _decorate_savings_goals(savings_goals_raw)
+        goals_activity = _decorate_goal_activity(get_savings_goal_activity(user_id, limit=10))
+        savings_settings = _decorate_savings_settings(get_savings_settings(user_id), savings_goals)
         daily_transfer_total = get_sender_daily_transfer_total(user_id, "UAH")
         payload = rates_payload()
         fallback = _fallback_rates()
         chart_start_date, chart_end_date = _default_chart_dates()
         _store_rates_history_safely(_rates_for_chart_and_storage(payload))
         history_filters = _read_history_filters()
-        history = get_transfer_history_for_user(
+        history = get_financial_history_for_user(
             user_id,
             limit=None if request.args.get("download") == "csv" else 50,
             direction=history_filters["direction"],
@@ -196,6 +445,7 @@ def register_profile_routes(app: Flask) -> None:
         return render_template(
             "dashboard.html",
             active_section=active_section,
+            user_id=user_id,
             login=user["login"],
             balances=balances,
             rates_uah_per_1=RATES_UAH_PER_1,
@@ -206,6 +456,11 @@ def register_profile_routes(app: Flask) -> None:
             users=users,
             card=card,
             card_blocked=card_blocked,
+            savings_goals=savings_goals,
+            goals_summary=goals_summary,
+            goals_activity=goals_activity,
+            savings_settings=savings_settings,
+            goal_theme_options=list(GOAL_THEME_OPTIONS.values()),
             history=history,
             history_filters=history_filters,
             transfer_card_history_links=_history_links("profile", history_filters, extra_params={"section": "transfer-card"}),
@@ -222,6 +477,155 @@ def register_profile_routes(app: Flask) -> None:
     @app.get("/profile/index.html")
     def profile_legacy():
         return redirect(url_for("profile"))
+
+    @app.get("/profile/goals")
+    @login_required
+    def goals():
+        return _dashboard_redirect("goals")
+
+    @app.post("/profile/goals/create")
+    @login_required
+    def goal_create():
+        user = current_user()
+        assert user is not None
+
+        title = (request.form.get("title") or "").strip()
+        description = (request.form.get("description") or "").strip()
+        target_amount = decimal_input(request.form.get("target_amount") or "")
+        theme_key = str(request.form.get("theme_key") or "tech").strip().lower()
+        target_date_raw = (request.form.get("target_date") or "").strip()
+        target_date_value: date | None = None
+
+        if theme_key not in GOAL_THEME_OPTIONS:
+            theme_key = "tech"
+
+        if not title:
+            flash("Введите название цели.", "error")
+            return _dashboard_redirect("goals")
+        if target_amount is None or target_amount <= 0:
+            flash("Введите корректную сумму цели больше нуля.", "error")
+            return _dashboard_redirect("goals")
+
+        if target_date_raw:
+            try:
+                target_date_value = datetime.strptime(target_date_raw, "%Y-%m-%d").date()
+            except ValueError:
+                flash("Выберите корректную дату цели.", "error")
+                return _dashboard_redirect("goals")
+            if target_date_value < date.today():
+                flash("Дата цели не может быть в прошлом.", "error")
+                return _dashboard_redirect("goals")
+
+        goal_id = create_savings_goal(
+            user_id=int(user["id"]),
+            title=title,
+            description=description,
+            theme_key=theme_key,
+            target_amount=target_amount,
+            target_date=target_date_value,
+            currency_code="UAH",
+        )
+        create_notification(
+            int(user["id"]),
+            f"Создана цель «{title}»",
+            kind="success",
+        )
+        create_audit_log(
+            int(user["id"]),
+            "goal_created",
+            (
+                f"Создана цель накопления '{title}' "
+                f"(goal_id={goal_id}) на сумму {decimal_to_str(target_amount)} UAH."
+            ),
+        )
+        flash("Цель накопления создана.", "ok")
+        return _dashboard_redirect("goals")
+
+    @app.post("/profile/goals/settings")
+    @login_required
+    def goal_settings():
+        user = current_user()
+        assert user is not None
+
+        enabled = str(request.form.get("enabled") or "").strip() == "1"
+        auto_percent = decimal_input(request.form.get("auto_percent") or "")
+        target_goal_raw = str(request.form.get("target_goal_id") or "").strip()
+        target_goal_id: int | None = None
+
+        if target_goal_raw:
+            try:
+                target_goal_id = int(target_goal_raw)
+            except ValueError:
+                flash("Выберите корректную цель для автокопилки.", "error")
+                return _dashboard_redirect("goals")
+
+        if auto_percent is None:
+            auto_percent = DEFAULT_AUTOSAVE_PERCENT
+
+        if enabled:
+            if auto_percent <= 0 or auto_percent > Decimal("100"):
+                flash("Процент автокопилки должен быть в диапазоне от 0.01% до 100%.", "error")
+                return _dashboard_redirect("goals")
+            if target_goal_id is None:
+                flash("Выберите цель, в которую будет идти автопополнение.", "error")
+                return _dashboard_redirect("goals")
+
+        try:
+            settings = save_savings_settings(
+                int(user["id"]),
+                enabled=enabled,
+                auto_percent=auto_percent,
+                target_goal_id=target_goal_id,
+            )
+        except ValueError as exc:
+            message_map = {
+                "goal not found": "Выбранная цель накопления не найдена.",
+                "unsupported goal currency": "Автокопилка сейчас работает только с целями в UAH.",
+                "goal already completed": "Нельзя привязать автокопилку к уже закрытой цели.",
+                "target goal required": "Выберите цель для автокопилки.",
+                "invalid auto percent": "Процент автокопилки должен быть в диапазоне от 0.01% до 100%.",
+            }
+            flash(message_map.get(str(exc), "Не удалось сохранить настройки автокопилки."), "error")
+            return _dashboard_redirect("goals")
+
+        if bool(settings.get("enabled")):
+            goal_title = str(settings.get("goal_title") or "цель накопления")
+            create_notification(
+                int(user["id"]),
+                (
+                    f"Автокопилка включена: {decimal_to_str(settings['auto_percent'])}% "
+                    f"в цель «{goal_title}»"
+                ),
+                kind="success",
+            )
+            create_audit_log(
+                int(user["id"]),
+                "savings_settings_updated",
+                (
+                    f"Автокопилка включена: {decimal_to_str(settings['auto_percent'])}% "
+                    f"в goal_id={settings.get('target_goal_id')}."
+                ),
+            )
+            flash(
+                (
+                    f"Автокопилка включена: {decimal_to_str(settings['auto_percent'])}% "
+                    f"каждого входящего перевода в UAH будет идти в цель «{goal_title}»."
+                ),
+                "ok",
+            )
+        else:
+            create_notification(
+                int(user["id"]),
+                "Автокопилка выключена",
+                kind="info",
+            )
+            create_audit_log(
+                int(user["id"]),
+                "savings_settings_updated",
+                "Автокопилка выключена.",
+            )
+            flash("Автокопилка выключена. Новые входящие переводы будут полностью идти на основной счет.", "ok")
+        return _dashboard_redirect("goals")
 
     @app.route("/profile/details", methods=["GET", "POST"])
     @login_required
@@ -284,6 +688,66 @@ def register_profile_routes(app: Flask) -> None:
         )
         flash("Профиль обновлен.", "ok")
         return _dashboard_redirect(return_section)
+
+    @app.post("/profile/goals/<int:goal_id>/fund")
+    @login_required
+    def goal_fund(goal_id: int):
+        user = current_user()
+        assert user is not None
+
+        amount = decimal_input(request.form.get("amount") or "")
+        if amount is None or amount <= 0:
+            flash("Введите сумму пополнения больше нуля.", "error")
+            return _dashboard_redirect("goals")
+
+        try:
+            result = top_up_savings_goal(int(user["id"]), goal_id, amount)
+        except ValueError as exc:
+            message_map = {
+                "goal not found": "Цель накопления не найдена.",
+                "goal already completed": "Эта цель уже закрыта.",
+                "goal top up exceeds remaining amount": "Сумма пополнения больше, чем осталось до цели.",
+                "insufficient funds": "Недостаточно UAH на балансе для пополнения цели.",
+                "unsupported goal currency": "Сейчас пополнение целей доступно только в UAH.",
+                "amount must be positive": "Введите сумму пополнения больше нуля.",
+            }
+            flash(message_map.get(str(exc), "Не удалось пополнить цель."), "error")
+            return _dashboard_redirect("goals")
+
+        create_notification(
+            int(user["id"]),
+            f"Цель «{result['title']}» пополнена на {decimal_to_str(result['amount'])} UAH",
+            kind="success",
+        )
+        create_audit_log(
+            int(user["id"]),
+            "goal_funded",
+            (
+                f"Цель накопления '{result['title']}' (goal_id={result['goal_id']}) "
+                f"пополнена на {decimal_to_str(result['amount'])} UAH."
+            ),
+        )
+        if bool(result.get("completed")):
+            create_notification(
+                int(user["id"]),
+                f"Цель «{result['title']}» достигнута",
+                kind="success",
+            )
+            create_audit_log(
+                int(user["id"]),
+                "goal_completed",
+                f"Цель накопления '{result['title']}' (goal_id={result['goal_id']}) достигнута.",
+            )
+            flash(f"Цель «{result['title']}» полностью закрыта.", "ok")
+        else:
+            flash(
+                (
+                    f"Цель «{result['title']}» пополнена на {decimal_to_str(result['amount'])} UAH. "
+                    f"Осталось {decimal_to_str(result['remaining_amount'])} UAH."
+                ),
+                "ok",
+            )
+        return _dashboard_redirect("goals")
 
     @app.get("/profile/rates")
     @app.get("/profile/rates.php")

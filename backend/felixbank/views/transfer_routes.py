@@ -22,10 +22,10 @@ from ..config import (
 from ..db import (
     create_audit_log,
     create_notification,
+    get_financial_history_for_user,
     get_balances,
     get_recent_sender_transfers,
     get_sender_daily_transfer_total,
-    get_transfer_history_for_user,
     get_user_by_virtual_card_number,
     normalize_virtual_card_number,
     set_user_blocked_until,
@@ -141,11 +141,12 @@ def _history_links(
 def _history_csv_response(history: list[dict[str, object]], user_id: int, filename_prefix: str) -> Response:
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Дата", "Отправитель", "Получатель", "Сумма", "Валюта", "Статус"])
+    writer.writerow(["Дата", "Источник", "Получатель / цель", "Сумма", "Валюта", "Статус", "Тип"])
 
     for row in history:
         created_at = row.get("created_at")
-        status = "Исходящий" if int(row["sender_id"]) == user_id else "Входящий"
+        status = str(row.get("status_label") or ("Исходящий" if int(row["sender_id"]) == user_id else "Входящий"))
+        operation_label = str(row.get("operation_label") or "Перевод")
         writer.writerow(
             [
                 created_at.strftime("%d.%m.%Y %H:%M") if created_at else "",
@@ -154,6 +155,7 @@ def _history_csv_response(history: list[dict[str, object]], user_id: int, filena
                 decimal_to_str(Decimal(str(row.get("amount") or "0"))),
                 str(row.get("currency_code") or ""),
                 status,
+                operation_label,
             ]
         )
 
@@ -162,6 +164,70 @@ def _history_csv_response(history: list[dict[str, object]], user_id: int, filena
         payload,
         content_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename_prefix}.csv"'},
+    )
+
+
+def _transfer_result_amount(payload: dict[str, object], key: str) -> Decimal:
+    return Decimal(str(payload.get(key) or "0")).quantize(Decimal("0.01"))
+
+
+def _create_transfer_notifications(
+    *,
+    sender_id: int,
+    recipient_id: int,
+    amount: Decimal,
+    currency_code: str,
+    transfer_result: dict[str, object],
+) -> None:
+    create_notification(
+        sender_id,
+        f"Перевод {decimal_to_compact_str(amount)} {currency_code} выполнен",
+        kind="success",
+    )
+
+    auto_saved_amount = _transfer_result_amount(transfer_result, "auto_saved_amount")
+    if currency_code == "UAH" and auto_saved_amount > 0:
+        net_recipient_amount = _transfer_result_amount(transfer_result, "net_recipient_amount")
+        goal_title = str(transfer_result.get("auto_saved_goal_title") or "цель накопления")
+        create_notification(
+            recipient_id,
+            (
+                f"Получен перевод +{decimal_to_compact_str(amount)} UAH: "
+                f"{decimal_to_compact_str(auto_saved_amount)} UAH автоматически отправлено в копилку, "
+                f"на счет зачислено {decimal_to_compact_str(net_recipient_amount)} UAH"
+            ),
+            kind="success",
+        )
+        create_notification(
+            recipient_id,
+            f"Автокопилка пополнила цель «{goal_title}» на {decimal_to_compact_str(auto_saved_amount)} UAH",
+            kind="info",
+        )
+        create_audit_log(
+            recipient_id,
+            "goal_auto_funded",
+            (
+                f"Автокопилка пополнила цель '{goal_title}' "
+                f"на {decimal_to_str(auto_saved_amount)} UAH после входящего перевода."
+            ),
+        )
+        if bool(transfer_result.get("auto_saved_completed")):
+            create_notification(
+                recipient_id,
+                f"Цель «{goal_title}» достигнута благодаря автокопилке",
+                kind="success",
+            )
+            create_audit_log(
+                recipient_id,
+                "goal_completed",
+                f"Цель накопления '{goal_title}' достигнута благодаря автокопилке.",
+            )
+        return
+
+    create_notification(
+        recipient_id,
+        f"Получен перевод +{decimal_to_compact_str(amount)} {currency_code}",
+        kind="success",
     )
 
 
@@ -260,21 +326,18 @@ def register_transfer_routes(app: Flask) -> None:
                         flash("Дневной лимит переводов превышен", "error")
                         return _dashboard_redirect(return_section)
                     try:
-                        transfer_balance(
+                        transfer_result = transfer_balance(
                             sender_id=user_id,
                             recipient_id=int(recipient["id"]),
                             amount=amount,
                             currency_code="UAH",
                         )
-                        create_notification(
-                            user_id,
-                            f"Перевод {decimal_to_compact_str(amount)} UAH выполнен",
-                            kind="success",
-                        )
-                        create_notification(
-                            int(recipient["id"]),
-                            f"Получен перевод +{decimal_to_compact_str(amount)} UAH",
-                            kind="success",
+                        _create_transfer_notifications(
+                            sender_id=user_id,
+                            recipient_id=int(recipient["id"]),
+                            amount=amount,
+                            currency_code="UAH",
+                            transfer_result=transfer_result,
                         )
                         create_audit_log(
                             user_id,
@@ -302,7 +365,7 @@ def register_transfer_routes(app: Flask) -> None:
                         flash("Ошибка базы данных при выполнении перевода.", "error")
                         return _dashboard_redirect(return_section)
 
-        history = get_transfer_history_for_user(
+        history = get_financial_history_for_user(
             user_id,
             limit=None,
             direction=history_filters["direction"],
@@ -359,21 +422,18 @@ def register_transfer_routes(app: Flask) -> None:
                     ):
                         return _anti_fraud_block_response(user_id, projected_count, projected_total_uah)
                     try:
-                        transfer_balance(
+                        transfer_result = transfer_balance(
                             sender_id=user_id,
                             recipient_id=int(recipient["id"]),
                             amount=amount,
                             currency_code=currency_code,
                         )
-                        create_notification(
-                            user_id,
-                            f"Перевод {decimal_to_compact_str(amount)} {currency_code} выполнен",
-                            kind="success",
-                        )
-                        create_notification(
-                            int(recipient["id"]),
-                            f"Получен перевод +{decimal_to_compact_str(amount)} {currency_code}",
-                            kind="success",
+                        _create_transfer_notifications(
+                            sender_id=user_id,
+                            recipient_id=int(recipient["id"]),
+                            amount=amount,
+                            currency_code=currency_code,
+                            transfer_result=transfer_result,
                         )
                         create_audit_log(
                             user_id,
@@ -401,7 +461,7 @@ def register_transfer_routes(app: Flask) -> None:
                         flash("Ошибка базы данных при международном переводе.", "error")
                         return _dashboard_redirect(return_section)
 
-        history = get_transfer_history_for_user(
+        history = get_financial_history_for_user(
             user_id,
             limit=None,
             direction=history_filters["direction"],
